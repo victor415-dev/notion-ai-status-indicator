@@ -5,7 +5,7 @@ M1 的唯一目标：**确认能准确识别 Notion AI 的 `thinking` / `respond
 ## 步骤
 
 1. 打开 `chrome://extensions` → 开启「开发者模式」→「加载已解压的扩展程序」→ 选本仓库根目录。
-2. 打开 `https://www.notion.so` 并触发一次 Notion AI 对话。
+2. 打开 https://www.notion.so 并触发一次 Notion AI 对话。
 3. 打开页面 DevTools 的 Console，观察 `[NAI-Indicator]` 日志：
    - 请求发出 → `thinking`
    - 首个流式 chunk → `responding`
