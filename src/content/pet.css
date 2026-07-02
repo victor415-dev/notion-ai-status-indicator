@@ -1,0 +1,48 @@
+#nai-indicator-pet {
+	position: fixed;
+	right: 20px;
+	bottom: 20px;
+	z-index: 2147483647;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 10px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.92);
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+	font: 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	color: #333;
+	cursor: grab;
+	user-select: none;
+	touch-action: none;
+	transition: box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+#nai-indicator-pet:active {
+	cursor: grabbing;
+}
+
+#nai-indicator-pet .nai-face {
+	font-size: 18px;
+	line-height: 1;
+}
+
+#nai-indicator-pet[data-state="idle"] {
+	opacity: 0.55;
+}
+#nai-indicator-pet[data-state="thinking"] {
+	box-shadow: 0 4px 16px rgba(47, 111, 237, 0.35);
+}
+#nai-indicator-pet[data-state="responding"] {
+	box-shadow: 0 4px 16px rgba(147, 51, 234, 0.35);
+}
+#nai-indicator-pet[data-state="done"] {
+	box-shadow: 0 4px 16px rgba(22, 163, 74, 0.45);
+}
+
+@media (prefers-color-scheme: dark) {
+	#nai-indicator-pet {
+		background: rgba(32, 32, 36, 0.92);
+		color: #eee;
+	}
+}

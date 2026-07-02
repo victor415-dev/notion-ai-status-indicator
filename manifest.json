@@ -1,0 +1,31 @@
+{
+	"manifest_version": 3,
+	"name": "Notion AI 对话完成指示器",
+	"version": "0.1.0",
+	"description": "检测 Notion AI 网页版对话任务状态（思考/输出/完成），页面内宠物显示 + 任务完成系统通知提醒。",
+	"minimum_chrome_version": "116",
+	"permissions": ["notifications", "storage", "offscreen"],
+	"host_permissions": ["*://*.notion.so/*"],
+	"background": {
+		"service_worker": "src/background/service-worker.js",
+		"type": "module"
+	},
+	"content_scripts": [
+		{
+			"matches": ["*://*.notion.so/*"],
+			"run_at": "document_start",
+			"world": "MAIN",
+			"js": ["src/content/interceptor.js"]
+		},
+		{
+			"matches": ["*://*.notion.so/*"],
+			"run_at": "document_start",
+			"world": "ISOLATED",
+			"js": ["src/content/content.js"],
+			"css": ["src/content/pet.css"]
+		}
+	],
+	"action": {
+		"default_title": "Notion AI 指示器"
+	}
+}
