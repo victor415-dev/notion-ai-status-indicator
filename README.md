@@ -59,7 +59,7 @@ content script 与 background 之间传递的状态事件建议统一为：
 
 - **可发布 / 易迁移优先**：上架 Chrome Web Store 且代码进 GitHub → **禁止**引入 `native messaging`、本地 WebSocket、原生桌宠等本地化内容。
 - **放弃「悬浮在所有窗口之上」的桌面宠物**：浏览器沙箱物理限制，扩展画不出浏览器窗口之外的东西；跨窗口感知改由系统通知实现。
-- **权限收敛**：`host_permissions` 限定 `*://*.notion.so/*`；仅申请 `notifications` / `storage` /（如需）`offscreen`。
+- **权限收敛**：`host_permissions` 限定 Notion 自家域名（`*://app.notion.com/*` 与 `*://*.notion.so/*`）；仅申请 `notifications` / `storage` /（如需）`offscreen`。不监听 Notion 以外的任何站点。
 
 ## 关键决策与取舍
 
