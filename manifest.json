@@ -6,6 +6,11 @@
 	"minimum_chrome_version": "116",
 	"permissions": ["notifications", "storage", "offscreen"],
 	"host_permissions": ["*://app.notion.com/*", "*://*.notion.so/*"],
+	"icons": {
+		"16": "assets/icon-16.png",
+		"48": "assets/icon-48.png",
+		"128": "assets/icon-128.png"
+	},
 	"background": {
 		"service_worker": "src/background/service-worker.js",
 		"type": "module"
@@ -26,6 +31,11 @@
 		}
 	],
 	"action": {
-		"default_title": "Notion AI 指示器"
+		"default_title": "Notion AI 指示器",
+		"default_icon": {
+			"16": "assets/icon-16.png",
+			"48": "assets/icon-48.png",
+			"128": "assets/icon-128.png"
+		}
 	}
 }
