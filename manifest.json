@@ -1,8 +1,8 @@
 {
 	"manifest_version": 3,
 	"name": "Notion AI 对话完成指示器",
-	"version": "0.2.0",
-	"description": "检测 Notion AI 网页版对话状态（思考/输出/完成）：页面内宠物 + 工具栏角标 + 弹出对话面板（列出所有对话并可跳转） + 完成系统通知提醒。",
+	"version": "0.3.0",
+	"description": "检测 Notion AI 网页版对话状态（思考/输出/完成）：页面内宠物 + 工具栏角标 + 画中画悬浮窗（置顶浮于所有应用之上，实时显示所有对话并可点击跳转） + 完成系统通知提醒。",
 	"minimum_chrome_version": "116",
 	"permissions": ["notifications", "storage", "offscreen"],
 	"host_permissions": ["*://app.notion.com/*", "*://*.notion.so/*"],

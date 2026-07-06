@@ -22,18 +22,15 @@ const BADGE = {
     DONE_COLOR: "#16a34a",
 };
 
-// ---- 桌面伴侣（Electron）本地通道 ----
-// 桌面程序在本机跑一个 WebSocket 服务端，扩展作为客户端连上去，把所有对话状态推给它；
-// 桌面端点击某条对话时回传 focus 指令，扩展据此聚焦对应窗口/标签。仅本机 127.0.0.1，数据不出本地。
-const DESKTOP_WS_URL = "ws://127.0.0.1:8787";
-const DESKTOP_RECONNECT_MS = 5000;
-let desktopSocket = null;
-let desktopReconnectTimer = null;
+// content ↔ background 的悬浮窗（画中画）消息。字符串须与 content.js 保持一致。
+const MSG_GET_SNAPSHOT = "GET_SNAPSHOT"; // content -> bg：拉取当前所有对话
+const MSG_SNAPSHOT = "NAI_SNAPSHOT";     // bg -> content：推送最新对话列表
+const MSG_FOCUS_TAB = "FOCUS_TAB";       // content -> bg：聚焦并跳转到某个对话标签
 
 let globalBadgeTimer = null;
 let creating = null;
 
-// SW 可能休眠后重启，导致内存里的对话表清空。启动时先从 session 存储回填，避免弹出面板/角标丢历史。
+// SW 可能休眠后重启，导致内存里的对话表清空。启动时先从 session 存储回填，避免悬浮窗/面板/角标丢历史。
 (async function hydrate() {
     try {
         const data = await chrome.storage.session.get(STORE_KEY);
@@ -55,9 +52,6 @@ let creating = null;
     }
 })();
 
-// 尝试连接桌面伴侣（未开则静默重试，不影响扩展其他功能）。
-connectDesktop();
-
 // chrome.action.* 在标签已关闭时会抛 "No tab with id"，统一吞掉，避免未处理的 promise 报错污染错误列表。
 function safeAction(run) {
     try {
@@ -68,8 +62,23 @@ function safeAction(run) {
     }
 }
 
-chrome.runtime.onMessage.addListener((msg, sender) => {
-    if (!msg || msg.type !== MSG.STATE) return;
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg) return;
+    if (msg.type === MSG.STATE) {
+        handleStateMessage(msg, sender);
+        return;
+    }
+    if (msg.type === MSG_GET_SNAPSHOT) {
+        sendResponse({ conversations: buildSnapshot() });
+        return true;
+    }
+    if (msg.type === MSG_FOCUS_TAB) {
+        focusTab(msg.tabId, msg.windowId);
+        return;
+    }
+});
+
+function handleStateMessage(msg, sender) {
     const tabId = sender.tab && sender.tab.id;
     if (tabId == null) return;
     if (!isKnownState(msg.state)) return;
@@ -96,7 +105,7 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 
     updateGlobalBadge();
     syncStore();
-});
+}
 
 chrome.tabs.onRemoved.addListener((tabId) => {
     clearTabState(tabId, { clearNotificationThrottle: true });
@@ -146,7 +155,7 @@ function isRunningState(state) {
     return state === STATES.THINKING || state === STATES.RESPONDING;
 }
 
-// 把当前所有对话镜像到 session 存储，供弹出面板读取（面板不必唤醒 SW 即可拿到最新列表）；同时推送给桌面伴侣。
+// 把当前所有对话镜像到 session 存储，供弹出面板读取（面板不必唤醒 SW 即可拿到最新列表）；同时广播给所有悬浮窗。
 function syncStore() {
     const list = {};
     for (const [tabId, state] of tabStates) {
@@ -164,7 +173,7 @@ function syncStore() {
     } catch (e) {
         /* session 不可用，忽略 */
     }
-    pushDesktopSnapshot();
+    broadcastSnapshot();
 }
 
 function updateTabBadge(tabId, state, at) {
@@ -319,44 +328,8 @@ async function playSound() {
     }
 }
 
-// ---- 桌面伴侣通道实现 ----
-function connectDesktop() {
-    if (desktopSocket &&
-        (desktopSocket.readyState === WebSocket.OPEN || desktopSocket.readyState === WebSocket.CONNECTING)) {
-        return;
-    }
-    let sock;
-    try {
-        sock = new WebSocket(DESKTOP_WS_URL);
-    } catch (e) {
-        scheduleDesktopReconnect();
-        return;
-    }
-    desktopSocket = sock;
-    sock.addEventListener("open", () => {
-        console.log("[NAI-BG] 已连接桌面伴侣");
-        pushDesktopSnapshot();
-    });
-    sock.addEventListener("message", (ev) => {
-        handleDesktopCommand(ev.data);
-    });
-    sock.addEventListener("close", () => {
-        if (desktopSocket === sock) desktopSocket = null;
-        scheduleDesktopReconnect();
-    });
-    sock.addEventListener("error", () => {
-        try { sock.close(); } catch (e) {}
-    });
-}
-
-function scheduleDesktopReconnect() {
-    if (desktopReconnectTimer) return;
-    desktopReconnectTimer = setTimeout(() => {
-        desktopReconnectTimer = null;
-        connectDesktop();
-    }, DESKTOP_RECONNECT_MS);
-}
-
+// ---- 悬浮窗（画中画）数据通道 ----
+// 组装当前所有对话快照（数组），供悬浮窗渲染。
 function buildSnapshot() {
     const list = [];
     for (const [tabId, state] of tabStates) {
@@ -372,28 +345,21 @@ function buildSnapshot() {
     return list;
 }
 
-function pushDesktopSnapshot() {
-    if (!desktopSocket || desktopSocket.readyState !== WebSocket.OPEN) return;
-    try {
-        desktopSocket.send(JSON.stringify({ type: "snapshot", conversations: buildSnapshot(), at: Date.now() }));
-    } catch (e) {
-        /* 发送失败，下次状态变化时重试 */
+// 把最新对话列表推给所有已知 Notion 标签里的悬浮窗（没打开悬浮窗的标签收到也会忽略）。
+function broadcastSnapshot() {
+    const conversations = buildSnapshot();
+    for (const tabId of tabStates.keys()) {
+        safeAction(() => chrome.tabs.sendMessage(tabId, { type: MSG_SNAPSHOT, conversations }));
     }
 }
 
-function handleDesktopCommand(raw) {
-    let msg;
-    try {
-        msg = JSON.parse(typeof raw === "string" ? raw : "");
-    } catch (e) {
-        return;
-    }
-    if (!msg || msg.type !== "focus") return;
-    const tabId = Number(msg.tabId);
-    if (!Number.isFinite(tabId)) return;
-    chrome.tabs.get(tabId, (tab) => {
+// 悬浮窗点击某条对话 → 聚焦对应窗口并激活该标签。
+function focusTab(tabId, windowId) {
+    const id = Number(tabId);
+    if (!Number.isFinite(id)) return;
+    chrome.tabs.get(id, (tab) => {
         if (chrome.runtime.lastError || !tab) return;
         if (tab.windowId != null) chrome.windows.update(tab.windowId, { focused: true });
-        chrome.tabs.update(tabId, { active: true });
+        chrome.tabs.update(id, { active: true });
     });
 }
