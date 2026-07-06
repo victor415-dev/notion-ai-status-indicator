@@ -17,7 +17,7 @@
         responding: { face: "✍️", label: "输出中" },
         done: { face: "✅", label: "完成" },
     };
-    const DONE_RESET_MS = 3000;
+    const DONE_RESET_MS = 6000;
     const STORAGE_KEY = "petPos";
 
     let current = STATES.IDLE;
@@ -63,6 +63,7 @@
 
     function reportState(state) {
         try {
+            console.debug("[NAI] 上报状态", state);
             chrome.runtime.sendMessage({ type: "NAI_STATE", state, url: location.href, at: Date.now() });
         } catch (e) {
             /* service worker 可能在重启，忽略 */
