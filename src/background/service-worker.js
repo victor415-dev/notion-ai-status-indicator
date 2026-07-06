@@ -21,11 +21,23 @@ const BADGE = {
 let globalBadgeTimer = null;
 let creating = null;
 
+// chrome.action.* 在标签已关闭时会抛 "No tab with id"，统一吞掉，避免未处理的 promise 报错污染错误列表。
+function safeAction(run) {
+    try {
+        const p = run();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch (e) {
+        /* 标签已关闭或 action 暂不可用，忽略 */
+    }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender) => {
     if (!msg || msg.type !== MSG.STATE) return;
     const tabId = sender.tab && sender.tab.id;
     if (tabId == null) return;
     if (!isKnownState(msg.state)) return;
+
+    console.log("[NAI-BG] 收到状态", msg.state, "tab", tabId);
 
     const at = normalizeTime(msg.at);
     const prev = tabStates.get(tabId);
@@ -50,7 +62,9 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (changeInfo.url || changeInfo.status === "loading") {
+    // 只在真正的整页导航/刷新(status:loading)时清空。Notion 是单页应用，发消息时常用
+    // pushState 改 URL(只有 changeInfo.url、没有 status)，那种情况不能清，否则角标会被瞬间抹掉。
+    if (changeInfo.status === "loading") {
         clearTabState(tabId);
     }
 });
@@ -94,22 +108,22 @@ function isRunningState(state) {
 function updateTabBadge(tabId, state, at) {
     clearTabBadgeTimer(tabId);
     if (isRunningState(state)) {
-        chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE.RUNNING_COLOR });
-        chrome.action.setBadgeText({ tabId, text: BADGE.RUNNING_TEXT });
+        safeAction(() => chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE.RUNNING_COLOR }));
+        safeAction(() => chrome.action.setBadgeText({ tabId, text: BADGE.RUNNING_TEXT }));
         return;
     }
     if (state === STATES.DONE) {
-        chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE.DONE_COLOR });
-        chrome.action.setBadgeText({ tabId, text: BADGE.DONE_TEXT });
+        safeAction(() => chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE.DONE_COLOR }));
+        safeAction(() => chrome.action.setBadgeText({ tabId, text: BADGE.DONE_TEXT }));
         tabBadgeTimers.set(tabId, setTimeout(() => {
             if (tabStates.get(tabId) === STATES.DONE && recentDoneAt.get(tabId) === at) {
-                chrome.action.setBadgeText({ tabId, text: "" });
+                safeAction(() => chrome.action.setBadgeText({ tabId, text: "" }));
             }
             tabBadgeTimers.delete(tabId);
         }, BADGE_CLEAR_MS));
         return;
     }
-    chrome.action.setBadgeText({ tabId, text: "" });
+    safeAction(() => chrome.action.setBadgeText({ tabId, text: "" }));
 }
 
 function updateGlobalBadge() {
@@ -118,20 +132,20 @@ function updateGlobalBadge() {
 
     const running = runningCount();
     if (running > 0) {
-        chrome.action.setBadgeBackgroundColor({ color: BADGE.RUNNING_COLOR });
-        chrome.action.setBadgeText({ text: running > 1 ? String(running) : BADGE.RUNNING_TEXT });
+        safeAction(() => chrome.action.setBadgeBackgroundColor({ color: BADGE.RUNNING_COLOR }));
+        safeAction(() => chrome.action.setBadgeText({ text: running > 1 ? String(running) : BADGE.RUNNING_TEXT }));
         return;
     }
 
     const nextDoneExpiry = earliestRecentDoneExpiry();
     if (nextDoneExpiry != null) {
-        chrome.action.setBadgeBackgroundColor({ color: BADGE.DONE_COLOR });
-        chrome.action.setBadgeText({ text: BADGE.DONE_TEXT });
+        safeAction(() => chrome.action.setBadgeBackgroundColor({ color: BADGE.DONE_COLOR }));
+        safeAction(() => chrome.action.setBadgeText({ text: BADGE.DONE_TEXT }));
         globalBadgeTimer = setTimeout(updateGlobalBadge, Math.max(0, nextDoneExpiry - Date.now()) + 50);
         return;
     }
 
-    chrome.action.setBadgeText({ text: "" });
+    safeAction(() => chrome.action.setBadgeText({ text: "" }));
 }
 
 function runningCount() {
@@ -177,7 +191,7 @@ function clearTabState(tabId, options = {}) {
     if (options.clearNotificationThrottle) {
         lastNotificationAt.delete(tabId);
     }
-    chrome.action.setBadgeText({ tabId, text: "" });
+    safeAction(() => chrome.action.setBadgeText({ tabId, text: "" }));
     updateGlobalBadge();
 }
 
@@ -196,8 +210,8 @@ function clearGlobalBadgeTimer() {
 
 function notifyDone(tabId, url) {
     const notificationId = `nai-done-${tabId}-${Date.now()}`;
-    // 注意：basic 通知需要 iconUrl，请在 assets/ 放置 icon-128.png（见 assets/README.md）。
-    // 缺图标时回调里的 lastError 会被吞掉，不影响其它功能。
+    console.log("[NAI-BG] 触发完成通知", notificationId);
+    // 若通知没弹，多半是系统层面未授权：请到 系统设置 > 通知 > Google Chrome 打开"允许通知"。
     chrome.notifications.create(
         notificationId,
         {
@@ -208,7 +222,9 @@ function notifyDone(tabId, url) {
             priority: 2,
         },
         (createdId) => {
-            void chrome.runtime.lastError;
+            if (chrome.runtime.lastError) {
+                console.warn("[NAI-BG] 通知创建失败：", chrome.runtime.lastError.message);
+            }
             notificationTabs.set(createdId || notificationId, tabId);
         },
     );
