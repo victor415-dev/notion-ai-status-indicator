@@ -12,8 +12,8 @@ _最后更新：2026-07-05_
 
 为实现功能，本扩展仅在以下 Notion 域名的页面上运行：
 
-- `https://app.notion.com/*`
-- `https://*.notion.so/*`
+- `app.notion.com/*`
+- `*.notion.so/*`
 
 在这些页面上，本扩展会：
 
