@@ -1,9 +1,8 @@
 (() => {
     "use strict";
 
-    // ISOLATED world：接收主世界拦截器广播的状态，维护状态机，渲染页面内宠物，
-    // 并把状态上报给 background。点击宠物可开关“画中画悬浮窗”。
-    if (document.getElementById("nai-indicator-pet")) return;
+    // ISOLATED world：接收主世界拦截器广播的状态，维护状态机，并把状态上报给 background。
+    // T-001：移除页面内全部可见 UI（不再创建 #nai-indicator-pet 等元素）。
 
     const STATES = {
         IDLE: "idle",
@@ -11,14 +10,8 @@
         RESPONDING: "responding",
         DONE: "done",
     };
-    const STATE_META = {
-        idle: { face: "🐾", label: "空闲" },
-        thinking: { face: "🤔", label: "思考中" },
-        responding: { face: "✍️", label: "输出中" },
-        done: { face: "✅", label: "完成" },
-    };
+
     const DONE_RESET_MS = 6000;
-    const STORAGE_KEY = "petPos";
 
     // 悬浮窗消息（须与 service-worker.js 一致）
     const MSG_GET_SNAPSHOT = "GET_SNAPSHOT";
@@ -27,54 +20,7 @@
 
     let current = STATES.IDLE;
     let resetTimer = null;
-    let dragging = null;
-
-    const pet = document.createElement("div");
-    pet.id = "nai-indicator-pet";
-    pet.setAttribute("role", "status");
-    pet.setAttribute("aria-live", "polite");
-    pet.title = "点击打开/关闭悬浮窗，拖动可移动";
-    pet.dataset.state = current;
-
-    const face = document.createElement("span");
-    face.className = "nai-face";
-    const label = document.createElement("span");
-    label.className = "nai-label";
-    const pulse = document.createElement("span");
-    pulse.className = "nai-pulse";
-    pulse.setAttribute("aria-hidden", "true");
-    pet.appendChild(pulse);
-    pet.appendChild(face);
-    pet.appendChild(label);
-
-    function render() {
-        const meta = STATE_META[current] || STATE_META.idle;
-        pet.dataset.state = current;
-        face.textContent = meta.face;
-        label.textContent = meta.label;
-    }
-
-    function setState(next) {
-        if (!isKnownState(next)) return;
-        clearTimeout(resetTimer);
-        resetTimer = null;
-        if (next === current && next !== STATES.DONE) return;
-        current = next;
-        render();
-        reportState(next);
-        if (next === STATES.DONE) {
-            resetTimer = setTimeout(() => setState(STATES.IDLE), DONE_RESET_MS);
-        }
-    }
-
-    function reportState(state) {
-        try {
-            console.debug("[NAI] 上报状态", state);
-            chrome.runtime.sendMessage({ type: "NAI_STATE", state, url: location.href, at: Date.now() });
-        } catch (e) {
-            /* service worker 可能在重启，忽略 */
-        }
-    }
+    let lastInput = "";
 
     function isKnownState(state) {
         return state === STATES.IDLE ||
@@ -83,87 +29,40 @@
             state === STATES.DONE;
     }
 
+    function setState(next) {
+        if (!isKnownState(next)) return;
+        clearTimeout(resetTimer);
+        resetTimer = null;
+        if (next === current && next !== STATES.DONE) return;
+        current = next;
+        reportState(next);
+        if (next === STATES.DONE) {
+            resetTimer = setTimeout(() => setState(STATES.IDLE), DONE_RESET_MS);
+        }
+    }
+
+    function reportState(state) {
+        try {
+            chrome.runtime.sendMessage({
+                type: "NAI_STATE",
+                state,
+                url: location.href,
+                title: document.title,
+                lastInput: lastInput || "",
+                at: Date.now(),
+            });
+        } catch (e) {
+            /* service worker 可能在重启，忽略 */
+        }
+    }
+
     window.addEventListener("message", (ev) => {
         if (ev.source !== window) return;
         const d = ev.data;
         if (!d || d.__naiIndicator !== true) return;
+        if (typeof d.lastInput === "string") lastInput = d.lastInput;
         setState(d.state);
     });
-
-    // ---- 拖动 + 记忆位置（非拖动的单击 = 开关悬浮窗）----
-    function makeDraggable(el) {
-        el.addEventListener("pointerdown", (e) => {
-            const r = el.getBoundingClientRect();
-            dragging = {
-                pointerId: e.pointerId,
-                startX: e.clientX,
-                startY: e.clientY,
-                originX: r.left,
-                originY: r.top,
-                moved: false,
-            };
-            el.classList.add("is-dragging");
-            try { el.setPointerCapture(e.pointerId); } catch (_) {}
-        });
-        el.addEventListener("pointermove", (e) => {
-            if (!dragging) return;
-            const dx = e.clientX - dragging.startX;
-            const dy = e.clientY - dragging.startY;
-            if (Math.abs(dx) + Math.abs(dy) > 3) dragging.moved = true;
-            placePet(dragging.originX + dx, dragging.originY + dy);
-        });
-        el.addEventListener("pointerup", (e) => {
-            if (!dragging) return;
-            const wasClick = !dragging.moved;
-            const shouldSave = dragging.moved;
-            dragging = null;
-            el.classList.remove("is-dragging");
-            try { el.releasePointerCapture(e.pointerId); } catch (_) {}
-            if (shouldSave) savePosition();
-            if (wasClick) togglePip();
-        });
-        el.addEventListener("pointercancel", (e) => {
-            dragging = null;
-            el.classList.remove("is-dragging");
-            try { el.releasePointerCapture(e.pointerId); } catch (_) {}
-        });
-    }
-
-    function savePosition() {
-        const r = pet.getBoundingClientRect();
-        const petPos = { x: Math.round(r.left), y: Math.round(r.top) };
-        try {
-            chrome.storage.local.set({ [STORAGE_KEY]: petPos });
-        } catch (e) {
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(petPos)); } catch (_) {}
-        }
-    }
-
-    function restorePosition() {
-        try {
-            chrome.storage.local.get(STORAGE_KEY, (res) => {
-                applyStoredPosition(res && res[STORAGE_KEY]);
-            });
-        } catch (e) {
-            try {
-                applyStoredPosition(JSON.parse(localStorage.getItem(STORAGE_KEY) || "null"));
-            } catch (_) {}
-        }
-    }
-
-    function applyStoredPosition(pos) {
-        if (!pos || typeof pos.x !== "number" || typeof pos.y !== "number") return;
-        placePet(pos.x, pos.y);
-    }
-
-    function placePet(x, y) {
-        const maxX = Math.max(0, window.innerWidth - pet.offsetWidth);
-        const maxY = Math.max(0, window.innerHeight - pet.offsetHeight);
-        pet.style.left = Math.round(Math.max(0, Math.min(maxX, x))) + "px";
-        pet.style.top = Math.round(Math.max(0, Math.min(maxY, y))) + "px";
-        pet.style.right = "auto";
-        pet.style.bottom = "auto";
-    }
 
     // ================= 画中画悬浮窗（Document Picture-in-Picture）=================
     // 纯扩展实现的系统级置顶小窗，浮于所有应用之上，实时显示所有 Notion AI 对话。
@@ -348,26 +247,10 @@ chrome.runtime.onMessage.addListener((msg) => {
     });
     // ============================================================================
 
-    function mount() {
-        if (!document.body) {
-            requestAnimationFrame(mount);
-            return;
-        }
-        document.body.appendChild(pet);
-        render();
-        restorePosition();
-        makeDraggable(pet);
-        reportState(current);
-    }
-
-    window.addEventListener("resize", () => {
-        const r = pet.getBoundingClientRect();
-        placePet(r.left, r.top);
-    });
+    // T-001：保留 PiP 代码但不提供页面内入口；因此不再自动挂载任何可见元素。
+    // 仍在页面可见/返回前后上报一次状态，供桌面端保持刷新。
     window.addEventListener("pageshow", () => reportState(current));
     document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") reportState(current);
     });
-
-    mount();
 })();

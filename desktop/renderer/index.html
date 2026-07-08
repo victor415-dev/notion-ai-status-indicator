@@ -1,25 +1,22 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" href="styles.css">
-    <title>Notion AI 伴侣</title>
+	<meta charset="UTF-8">
+	<meta name="color-scheme" content="light dark">
+	<link rel="stylesheet" href="styles.css">
+	<title>Pet</title>
 </head>
 <body>
-    <div class="titlebar">
-        <span class="brand">🐾 Notion AI 伴侣</span>
-        <span class="win-btns">
-            <button id="min" title="最小化">–</button>
-            <button id="quit" title="退出">×</button>
-        </span>
-    </div>
-    <div class="subbar">
-        <span class="count" id="count"></span>
-        <span class="conn off" id="conn">○ 等待扩展…</span>
-    </div>
-    <div class="list" id="list"></div>
-    <div class="empty" id="empty" hidden>还没有检测到 Notion AI 对话。<br>在浏览器打开 Notion 发起对话即可。</div>
-    <div class="foot">切到任何应用都能看到进展 · 点击跳转</div>
-    <script src="renderer.js"></script>
+	<div id="app">
+		<div id="cards" class="cards" hidden></div>
+		<button id="collapse" class="collapse" hidden type="button" aria-label="折叠">
+			<span class="chev">˅</span>
+		</button>
+		<button id="badge" class="badge" hidden type="button" aria-label="展开"></button>
+		<div id="pet" class="pet" aria-label="Notion AI Pet" tabindex="0">
+			<div class="pet-icon" aria-hidden="true"></div>
+		</div>
+	</div>
+	<script src="renderer.js"></script>
 </body>
 </html>

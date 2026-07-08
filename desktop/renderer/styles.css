@@ -1,119 +1,197 @@
 * { box-sizing: border-box; }
 
 html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
-    background: #1e1f22;
-    color: #e8e8ea;
-    overflow: hidden;
-    user-select: none;
+	margin: 0;
+	padding: 0;
+	background: transparent;
+	overflow: hidden;
+	user-select: none;
 }
 
-.titlebar {
-    -webkit-app-region: drag;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 10px;
-    background: #17181b;
-}
-.brand { font-size: 12px; font-weight: 600; }
-.win-btns { -webkit-app-region: no-drag; }
-.win-btns button {
-    width: 20px;
-    height: 20px;
-    margin-left: 4px;
-    border: none;
-    border-radius: 5px;
-    background: #2c2e33;
-    color: #c9ccd2;
-    cursor: pointer;
-    font-size: 12px;
-    line-height: 1;
-}
-.win-btns button:hover { background: #3a3d44; }
-#quit:hover { background: #c0392b; color: #fff; }
-
-.subbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 12px;
-    border-bottom: 1px solid #2a2c31;
-}
-.count { font-size: 11px; color: #9aa0aa; }
-.conn { font-size: 11px; }
-.conn.on { color: #3fbf6f; }
-.conn.off { color: #8a8f98; }
-
-.list {
-    padding: 6px;
-    overflow-y: auto;
-    height: calc(100% - 94px);
+#app {
+	position: relative;
+	width: fit-content;
+	height: fit-content;
+	padding: 0;
 }
 
-.item {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 8px 9px;
-    border-radius: 8px;
-    cursor: pointer;
+/* 可拖动区域：宠物图标 */
+.pet {
+	width: 56px;
+	height: 56px;
+	border-radius: 999px;
+	border: none;
+	padding: 0;
+	background: transparent;
+	cursor: pointer;
+	outline: none;
+	-webkit-app-region: drag;
 }
-.item:hover { background: #2a2c31; }
+
+.pet:focus-visible {
+	box-shadow: 0 0 0 2px rgba(111, 155, 255, 0.55);
+}
+
+.pet-icon {
+	width: 56px;
+	height: 56px;
+	border-radius: 999px;
+	background: radial-gradient(75% 75% at 30% 20%, #7fb2ff 0%, rgba(127,178,255,0) 55%),
+		linear-gradient(180deg, #5ea2ff 0%, #2f6fed 52%, #1e4fd8 100%);
+	box-shadow:
+		0 14px 34px rgba(0, 0, 0, 0.28),
+		inset 0 1px 0 rgba(255, 255, 255, 0.35);
+	position: relative;
+	overflow: hidden;
+}
+
+/* 白色爪印：纯 CSS（无二进制） */
+.pet-icon::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	background:
+		radial-gradient(circle at 22px 19px, #fff 0 4px, transparent 4.5px),
+		radial-gradient(circle at 34px 18px, #fff 0 4px, transparent 4.5px),
+		radial-gradient(circle at 19px 30px, #fff 0 4px, transparent 4.5px),
+		radial-gradient(circle at 37px 30px, #fff 0 4px, transparent 4.5px),
+		radial-gradient(ellipse at 28px 34px, #fff 0 7px, transparent 7.5px);
+	opacity: 0.95;
+	filter: drop-shadow(0 1px 0 rgba(0,0,0,0.12));
+}
+
+/* 禁止拖动的区域 */
+.no-drag {
+	-webkit-app-region: no-drag;
+}
+
+.cards {
+	position: absolute;
+	left: 50%;
+	transform: translateX(-50%);
+	bottom: 60px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	align-items: stretch;
+	min-width: 220px;
+	max-width: 280px;
+	-webkit-app-region: no-drag;
+}
+
+.card {
+	display: grid;
+	grid-template-columns: 18px 1fr;
+	gap: 10px;
+	align-items: center;
+	padding: 10px 12px;
+	border-radius: 12px;
+	border: 1px solid rgba(15, 23, 42, 0.14);
+	background: rgba(255, 255, 255, 0.86);
+	backdrop-filter: blur(14px) saturate(1.2);
+	box-shadow: 0 12px 30px rgba(15, 23, 42, 0.18);
+	cursor: pointer;
+}
+
+.card:hover {
+	background: rgba(255, 255, 255, 0.92);
+}
+
+.card-title {
+	font-size: 12.5px;
+	font-weight: 600;
+	color: #0f172a;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.card-sub {
+	margin-top: 3px;
+	font-size: 11px;
+	color: #64748b;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
 
 .ind {
-    flex: 0 0 auto;
-    width: 15px;
-    height: 15px;
-    border-radius: 50%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 11px;
+	width: 16px;
+	height: 16px;
+	border-radius: 999px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 12px;
+	line-height: 1;
 }
-.ind.idle { background: #4b4f57; }
-.ind.done { background: #16a34a; color: #fff; }
+
 .ind.run {
-    background: transparent;
-    border: 2px solid #35507f;
-    border-top-color: #6f9bff;
+	background: transparent;
+	border: 2px solid rgba(47, 111, 237, 0.28);
+	border-top-color: rgba(47, 111, 237, 1);
 }
-.ind.spin { animation: rot 0.8s linear infinite; }
+
+.ind.spin {
+	animation: rot 0.8s linear infinite;
+}
+
+.ind.done {
+	background: #16a34a;
+	color: #fff;
+}
+
 @keyframes rot { to { transform: rotate(360deg); } }
 
-.main { flex: 1 1 auto; min-width: 0; }
-.title {
-    font-size: 12.5px;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.sub { font-size: 10.5px; color: #8a8f98; margin-top: 2px; }
-
-.go { flex: 0 0 auto; color: #6b7078; font-size: 12px; }
-.item:hover .go { color: #6f9bff; }
-
-.empty {
-    padding: 24px 16px;
-    text-align: center;
-    color: #8a8f98;
-    font-size: 11.5px;
-    line-height: 1.6;
+.collapse {
+	position: absolute;
+	left: 50%;
+	transform: translateX(-50%);
+	bottom: 60px;
+	height: 20px;
+	min-width: 28px;
+	border-radius: 999px;
+	border: 1px solid rgba(15, 23, 42, 0.12);
+	background: rgba(255, 255, 255, 0.88);
+	backdrop-filter: blur(14px) saturate(1.2);
+	cursor: pointer;
+	padding: 0 8px;
+	-webkit-app-region: no-drag;
 }
 
-.foot {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 6px 12px;
-    border-top: 1px solid #2a2c31;
-    color: #6b7078;
-    font-size: 10.5px;
-    text-align: center;
-    background: #1e1f22;
+.badge {
+	position: absolute;
+	left: 50%;
+	transform: translateX(-50%);
+	bottom: 62px;
+	border-radius: 999px;
+	border: 1px solid rgba(15, 23, 42, 0.12);
+	background: rgba(255, 255, 255, 0.88);
+	backdrop-filter: blur(14px) saturate(1.2);
+	cursor: pointer;
+	padding: 2px 10px;
+	font-size: 12px;
+	font-weight: 700;
+	color: #0f172a;
+	-webkit-app-region: no-drag;
+}
+
+@media (prefers-color-scheme: dark) {
+	.card {
+		border-color: rgba(148, 163, 184, 0.18);
+		background: rgba(24, 24, 27, 0.78);
+		box-shadow: 0 14px 34px rgba(0, 0, 0, 0.42);
+	}
+	.card-title { color: #f8fafc; }
+	.card-sub { color: #9aa2ab; }
+	.collapse,
+	.badge {
+		border-color: rgba(148, 163, 184, 0.18);
+		background: rgba(24, 24, 27, 0.78);
+		color: #f8fafc;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.ind.spin { animation: none !important; }
 }

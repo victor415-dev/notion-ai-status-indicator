@@ -84,3 +84,112 @@
 		};
 	}
 })();
+
+// ===== T-001 additions (only additive) =====
+// 在不改动原有检测逻辑的前提下，额外解析 Notion AI 请求体并广播 lastInput（解析失败置空，绝不抛错）。
+(() => {
+	"use strict";
+
+	const AI_URL_HINTS = [
+		"/api/v3/runinferencetranscript",
+	];
+
+	function isAiUrl(url) {
+		try {
+			const u = String(url).toLowerCase();
+			return AI_URL_HINTS.some((h) => u.includes(h));
+		} catch (e) {
+			return false;
+		}
+	}
+
+	function safeJsonParse(text) {
+		try {
+			return JSON.parse(text);
+		} catch (e) {
+			return null;
+		}
+	}
+
+	function extractLastInputFromBody(body) {
+		// 这里尽量宽松地解析：支持 string / object / URLSearchParams / FormData
+		try {
+			if (!body) return "";
+			if (typeof body === "string") {
+				const j = safeJsonParse(body);
+				return extractFromJson(j) || "";
+			}
+			if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+				const t = body.get("input") || body.get("text") || "";
+				return String(t || "").slice(0, 80);
+			}
+			if (typeof FormData !== "undefined" && body instanceof FormData) {
+				const t = body.get("input") || body.get("text") || "";
+				return String(t || "").slice(0, 80);
+			}
+			if (typeof body === "object") {
+				return extractFromJson(body) || "";
+			}
+			return "";
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function extractFromJson(j) {
+		try {
+			if (!j || typeof j !== "object") return "";
+			// 常见形态：messages: [{ role, content }]
+			const messages = Array.isArray(j.messages) ? j.messages : null;
+			if (messages && messages.length) {
+				for (let i = messages.length - 1; i >= 0; i--) {
+					const m = messages[i];
+					if (!m) continue;
+					const role = (m.role || m.author || "").toLowerCase();
+					if (role && role !== "user") continue;
+					const content = typeof m.content === "string" ? m.content : (m.text || "");
+					if (content) return String(content).trim().slice(0, 80);
+				}
+			}
+			// 退化：input / prompt / text
+			const t = j.input || j.prompt || j.text || "";
+			return t ? String(t).trim().slice(0, 80) : "";
+		} catch (e) {
+			return "";
+		}
+	}
+
+	function broadcastLastInput(lastInput) {
+		try {
+			window.postMessage({
+				__naiIndicator: true,
+				source: "interceptor",
+				state: "idle",
+				at: Date.now(),
+				lastInput: lastInput || "",
+			}, "*");
+		} catch (e) {}
+	}
+
+	const prevFetch = window.fetch;
+	if (typeof prevFetch !== "function") return;
+
+	window.fetch = function (input, init) {
+		let url = input;
+		try {
+			url = input && typeof input === "object" && "url" in input ? input.url : input;
+		} catch (e) {}
+
+		try {
+			if (isAiUrl(url)) {
+				const body = init && init.body;
+				const lastInput = extractLastInputFromBody(body);
+				broadcastLastInput(lastInput);
+			}
+		} catch (e) {
+			// 绝不影响页面
+		}
+
+		return prevFetch.apply(this, arguments);
+	};
+})();
