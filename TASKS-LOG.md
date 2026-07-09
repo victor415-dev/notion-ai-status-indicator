@@ -26,7 +26,7 @@
 - Date: 2026-07-09 (Asia/Shanghai)
 - Commit:
 	- 9e157a4b2a4f10d2a03a38e0dca802331647cf5a — fix implementation
-	- TBD — task log update
+	- 19fee59beb56b74240b7ac5dd2c44190e930cc65 — task log update
 - Changes:
 	- desktop/renderer/styles.css: Removed all `-webkit-app-region` drag/no-drag rules from the pet/card/collapse/badge area so renderer mouse events are no longer swallowed by the OS drag region.
 	- desktop/renderer/renderer.js: Replaced pointer/app-region drag handling with JS `mousedown`/`mousemove`/`mouseup` handling based on `screenX/screenY`; movement under 4px now triggers the original `pet:open-notion({ tabId: "latest" })` click path, while movement at/above 4px sends move IPC events.
