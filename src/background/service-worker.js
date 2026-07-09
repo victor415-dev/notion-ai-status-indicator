@@ -7,6 +7,7 @@ const tabTitles = new Map();
 const tabWindows = new Map();
 const tabLastInputs = new Map();
 const lastUpdateAt = new Map();
+const conversationTabs = new Set();
 const recentDoneAt = new Map();
 const tabBadgeTimers = new Map();
 const notificationTabs = new Map();
@@ -164,6 +165,7 @@ let creating = null;
 			const c = list[key];
 			const tabId = Number(c && c.tabId);
 			if (!Number.isFinite(tabId)) continue;
+			conversationTabs.add(tabId);
 			if (c.state) tabStates.set(tabId, c.state);
 			if (c.url) tabUrls.set(tabId, c.url);
 			if (c.title) tabTitles.set(tabId, c.title);
@@ -212,19 +214,28 @@ function handleStateMessage(msg, sender) {
 
 	const at = normalizeTime(msg.at);
 	const prev = tabStates.get(tabId);
-	tabStates.set(tabId, msg.state);
-	lastUpdateAt.set(tabId, at);
-	if (msg.url) tabUrls.set(tabId, msg.url);
+	const hasConversation = conversationTabs.has(tabId);
+	const shouldRecordConversation = msg.state !== STATES.IDLE || hasConversation;
+	let snapshotState = msg.state;
+	if (msg.state === STATES.IDLE && hasConversation) {
+		snapshotState = prev === STATES.DONE || prev === STATES.IDLE ? STATES.DONE : (prev || STATES.DONE);
+	}
+	tabStates.set(tabId, snapshotState);
 
 	const titleFromSender = sender.tab && sender.tab.title ? sender.tab.title : "";
 	const titleFromMsg = msg.title ? msg.title : "";
 	const title = cleanTitle(titleFromMsg || titleFromSender);
-	if (title) tabTitles.set(tabId, title);
 
 	const lastInput = trimText(msg.lastInput || "", 80);
-	if (lastInput) tabLastInputs.set(tabId, lastInput);
 
-	if (sender.tab && sender.tab.windowId != null) tabWindows.set(tabId, sender.tab.windowId);
+	if (shouldRecordConversation) {
+		conversationTabs.add(tabId);
+		lastUpdateAt.set(tabId, at);
+		if (msg.url) tabUrls.set(tabId, msg.url);
+		if (title) tabTitles.set(tabId, title);
+		if (lastInput) tabLastInputs.set(tabId, lastInput);
+		if (sender.tab && sender.tab.windowId != null) tabWindows.set(tabId, sender.tab.windowId);
+	}
 
 	updateTabBadge(tabId, msg.state, at);
 
@@ -290,7 +301,9 @@ function isRunningState(state) {
 // 把当前所有对话镜像到 session 存储，供弹出面板读取（面板不必唤醒 SW 即可拿到最新列表）；同时广播给所有悬浮窗。
 function syncStore() {
 	const list = {};
-	for (const [tabId, state] of tabStates) {
+	for (const tabId of conversationTabs) {
+		const state = tabStates.get(tabId) || STATES.DONE;
+		const updatedAt = lastUpdateAt.get(tabId) || Date.now();
 		list[tabId] = {
 			tabId,
 			state,
@@ -298,7 +311,8 @@ function syncStore() {
 			title: tabTitles.get(tabId) || "",
 			lastInput: tabLastInputs.get(tabId) || "",
 			windowId: tabWindows.has(tabId) ? tabWindows.get(tabId) : null,
-			updatedAt: lastUpdateAt.get(tabId) || Date.now(),
+			updatedAt,
+			lastUpdateAt: updatedAt,
 		};
 	}
 	try {
@@ -394,6 +408,7 @@ function clearTabState(tabId, options = {}) {
 	tabWindows.delete(tabId);
 	tabLastInputs.delete(tabId);
 	lastUpdateAt.delete(tabId);
+	conversationTabs.delete(tabId);
 	recentDoneAt.delete(tabId);
 	clearTabBadgeTimer(tabId);
 	if (options.clearNotificationThrottle) {
@@ -465,7 +480,9 @@ async function playSound() {
 // ---- 悬浮窗（画中画）数据通道 ----
 function buildSnapshot() {
 	const list = [];
-	for (const [tabId, state] of tabStates) {
+	for (const tabId of conversationTabs) {
+		const state = tabStates.get(tabId) || STATES.DONE;
+		const updatedAt = lastUpdateAt.get(tabId) || Date.now();
 		list.push({
 			tabId,
 			state,
@@ -473,7 +490,8 @@ function buildSnapshot() {
 			title: tabTitles.get(tabId) || "",
 			lastInput: tabLastInputs.get(tabId) || "",
 			windowId: tabWindows.has(tabId) ? tabWindows.get(tabId) : null,
-			updatedAt: lastUpdateAt.get(tabId) || Date.now(),
+			updatedAt,
+			lastUpdateAt: updatedAt,
 		});
 	}
 	return list;
@@ -481,7 +499,7 @@ function buildSnapshot() {
 
 function broadcastSnapshot() {
 	const conversations = buildSnapshot();
-	for (const tabId of tabStates.keys()) {
+	for (const tabId of conversationTabs) {
 		safeAction(() => chrome.tabs.sendMessage(tabId, { type: MSG_SNAPSHOT, conversations }));
 	}
 }

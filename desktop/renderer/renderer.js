@@ -6,7 +6,6 @@ const collapseEl = document.getElementById("collapse");
 const badgeEl = document.getElementById("badge");
 const petIconEl = petEl.querySelector(".pet-icon");
 
-const DONE_RESET_MS = 6000;
 const DRAG_THRESHOLD_PX = 4;
 
 const RANK = { thinking: 0, responding: 0, done: 1, idle: 2 };
@@ -60,14 +59,10 @@ function normalizeTitle(title) {
 }
 
 function visibleCards(list) {
-	const now = Date.now();
 	return (list || []).filter((c) => {
 		if (!c) return false;
 		if (isRunning(c.state)) return true;
-		if (c.state === "done") {
-			const at = Number(c.updatedAt || 0);
-			return at && now - at <= DONE_RESET_MS;
-		}
+		if (c.state === "done") return true;
 		return false;
 	});
 }
@@ -118,8 +113,7 @@ function render() {
 	}
 
 	if (collapsed) {
-		const running = list.filter((c) => isRunning(c.state)).length;
-		badgeEl.textContent = String(running || list.length);
+		badgeEl.textContent = String(list.length);
 		updateWindowSize();
 		return;
 	}
@@ -219,6 +213,3 @@ window.naiBridge.onSnapshot((data) => {
 
 renderPetSvg();
 render();
-
-// 每 500ms 刷新 done 的 6 秒回落。
-setInterval(render, 500);
