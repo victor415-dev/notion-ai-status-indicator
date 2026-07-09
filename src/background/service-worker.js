@@ -90,6 +90,7 @@ function pushDesktopSnapshot() {
 function handleDesktopCommand(msg) {
 	const tabId = msg.tabId;
 	if (tabId === "latest") {
+		console.log("[NAI-PET] focus latest received");
 		focusLatestNotionTab();
 		return;
 	}

@@ -14,7 +14,7 @@ let wss = null;
 const clients = new Set();
 let lastSnapshot = [];
 let lastBounds = null; // {x,y,width,height}
-let dragState = null; // { startCursor, startBounds }
+let dragState = null; // { startScreen, startBounds }
 
 function clamp(n, min, max) {
 	return Math.min(max, Math.max(min, n));
@@ -158,9 +158,11 @@ function sendToExtension(payload) {
 }
 
 ipcMain.on("pet:open-notion", (_ev, payload) => {
+	const tabId = payload && payload.tabId ? payload.tabId : "latest";
+	if (tabId === "latest") console.log("[NAI-PET] focus latest sent");
 	sendToExtension({
 		type: "focus",
-		tabId: payload && payload.tabId ? payload.tabId : "latest",
+		tabId,
 	});
 });
 
@@ -187,31 +189,33 @@ ipcMain.on("pet:resize", (_ev, payload) => {
 	savePositionFromWindow();
 });
 
-ipcMain.on("pet:drag-start", () => {
+ipcMain.on("pet:drag-start", (_ev, payload) => {
 	if (!mainWindow) return;
 	dragState = {
-		startCursor: screen.getCursorScreenPoint(),
+		startScreen: {
+			x: Number(payload && payload.screenX) || screen.getCursorScreenPoint().x,
+			y: Number(payload && payload.screenY) || screen.getCursorScreenPoint().y,
+		},
 		startBounds: mainWindow.getBounds(),
 	};
 });
 
-ipcMain.on("pet:drag-move", () => {
+ipcMain.on("pet:move", (_ev, payload) => {
 	if (!mainWindow || !dragState) return;
-	const cursor = screen.getCursorScreenPoint();
-	const dx = cursor.x - dragState.startCursor.x;
-	const dy = cursor.y - dragState.startCursor.y;
+	const screenX = Number(payload && payload.screenX);
+	const screenY = Number(payload && payload.screenY);
+	const cursor = Number.isFinite(screenX) && Number.isFinite(screenY)
+		? { x: screenX, y: screenY }
+		: screen.getCursorScreenPoint();
+	const dx = cursor.x - dragState.startScreen.x;
+	const dy = cursor.y - dragState.startScreen.y;
 	const next = clampToVisibleWorkArea(
 		dragState.startBounds.x + dx,
 		dragState.startBounds.y + dy,
 		dragState.startBounds.width,
 		dragState.startBounds.height,
 	);
-	mainWindow.setBounds({
-		x: next.x,
-		y: next.y,
-		width: dragState.startBounds.width,
-		height: dragState.startBounds.height,
-	}, false);
+	mainWindow.setPosition(Math.round(next.x), Math.round(next.y), false);
 	lastBounds = mainWindow.getBounds();
 });
 

@@ -13,7 +13,7 @@ const RANK = { thinking: 0, responding: 0, done: 1, idle: 2 };
 
 let snapshot = [];
 let collapsed = false;
-let drag = null; // {x,y,moved,startedWindowDrag}
+let drag = null; // { startScreenX, startScreenY, moved, movingWindow }
 
 function renderPetSvg() {
 	petIconEl.innerHTML = `
@@ -160,42 +160,41 @@ function onPetClick() {
 	window.naiBridge.openNotion({ tabId: "latest" });
 }
 
-petEl.addEventListener("pointerdown", (e) => {
+function totalDragDistance(e) {
+	if (!drag) return 0;
+	return Math.abs(e.screenX - drag.startScreenX) + Math.abs(e.screenY - drag.startScreenY);
+}
+
+petEl.addEventListener("mousedown", (e) => {
 	if (e.button !== 0) return;
-	drag = { x: e.clientX, y: e.clientY, moved: false, startedWindowDrag: false };
-	try { petEl.setPointerCapture(e.pointerId); } catch (_) {}
+	drag = {
+		startScreenX: e.screenX,
+		startScreenY: e.screenY,
+		moved: false,
+		movingWindow: false,
+	};
+	window.naiBridge.dragStart({ screenX: e.screenX, screenY: e.screenY });
+	e.preventDefault();
 });
 
-petEl.addEventListener("pointermove", (e) => {
+window.addEventListener("mousemove", (e) => {
 	if (!drag) return;
-	const dx = e.clientX - drag.x;
-	const dy = e.clientY - drag.y;
-	if (Math.abs(dx) + Math.abs(dy) >= DRAG_THRESHOLD_PX) {
+	if (totalDragDistance(e) >= DRAG_THRESHOLD_PX) {
 		drag.moved = true;
+		drag.movingWindow = true;
 		petEl.classList.add("is-dragging");
-		if (!drag.startedWindowDrag) {
-			drag.startedWindowDrag = true;
-			window.naiBridge.dragStart();
-		}
-		window.naiBridge.dragMove();
+		window.naiBridge.move({ screenX: e.screenX, screenY: e.screenY });
 	}
 });
 
-petEl.addEventListener("pointerup", (e) => {
+window.addEventListener("mouseup", (e) => {
 	if (!drag) return;
-	const wasClick = !drag.moved;
-	if (drag.startedWindowDrag) window.naiBridge.dragEnd();
+	const wasClick = totalDragDistance(e) < DRAG_THRESHOLD_PX;
+	const movedWindow = drag.movingWindow;
 	drag = null;
 	petEl.classList.remove("is-dragging");
-	try { petEl.releasePointerCapture(e.pointerId); } catch (_) {}
-	if (wasClick) onPetClick();
-});
-
-petEl.addEventListener("pointercancel", (e) => {
-	if (drag && drag.startedWindowDrag) window.naiBridge.dragEnd();
-	drag = null;
-	petEl.classList.remove("is-dragging");
-	try { petEl.releasePointerCapture(e.pointerId); } catch (_) {}
+	window.naiBridge.dragEnd();
+	if (wasClick && !movedWindow) onPetClick();
 });
 
 petEl.addEventListener("contextmenu", (e) => {
