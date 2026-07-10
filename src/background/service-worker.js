@@ -227,9 +227,10 @@ function handleStateMessage(msg, sender) {
 	const shouldRecordConversation = msg.state !== STATES.IDLE || hasConversation;
 	let snapshotState = msg.state;
 	if (msg.state === STATES.IDLE && hasConversation) {
-		snapshotState = prev === STATES.DONE || prev === STATES.IDLE ? STATES.DONE : (prev || STATES.DONE);
+		snapshotState = STATES.DONE;
 	}
 	tabStates.set(tabId, snapshotState);
+	console.log("[NAI-BG] 状态流", tabId, `${prev || "none"}→${snapshotState}`);
 
 	const titleFromSender = sender.tab && sender.tab.title ? sender.tab.title : "";
 	const titleFromMsg = msg.title ? msg.title : "";
