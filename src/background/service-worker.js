@@ -38,6 +38,7 @@ function trimText(t, max) {
 // ================= 桌面伴侣 WebSocket（Codex 式常驻置顶）=================
 const DESKTOP_WS_URL = "ws://127.0.0.1:8787";
 const DESKTOP_RECONNECT_MS = 5000;
+const NOTION_AI_URL = "https://app.notion.com/chat";
 let desktopSocket = null;
 let desktopReconnectTimer = null;
 
@@ -107,11 +108,7 @@ function handleDesktopCommand(msg) {
 
 	const id = Number(tabId);
 	if (!Number.isFinite(id)) return;
-	chrome.tabs.get(id, (tab) => {
-		if (chrome.runtime.lastError || !tab) return;
-		if (tab.windowId != null) chrome.windows.update(tab.windowId, { focused: true });
-		chrome.tabs.update(id, { active: true });
-	});
+	focusTab(id, null, { dismissDone: true });
 }
 
 function isNotionUrl(url) {
@@ -149,7 +146,10 @@ function focusLatestNotionTab() {
 	chrome.tabs.query({}, (tabs) => {
 		if (chrome.runtime.lastError || !Array.isArray(tabs)) return;
 		const t = tabs.find((x) => x && x.url && isNotionUrl(x.url));
-		if (!t) return;
+		if (!t) {
+			chrome.tabs.create({ url: NOTION_AI_URL });
+			return;
+		}
 		if (t.windowId != null) chrome.windows.update(t.windowId, { focused: true });
 		if (t.id != null) chrome.tabs.update(t.id, { active: true });
 	});
@@ -209,7 +209,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 		return true;
 	}
 	if (msg.type === MSG_FOCUS_TAB) {
-		focusTab(msg.tabId, msg.windowId);
+		focusTab(msg.tabId, msg.windowId, { dismissDone: true });
 		return;
 	}
 });
@@ -514,14 +514,28 @@ function broadcastSnapshot() {
 	}
 }
 
-function focusTab(tabId, windowId) {
+function focusTab(tabId, windowId, options = {}) {
 	const id = Number(tabId);
 	if (!Number.isFinite(id)) return;
 	chrome.tabs.get(id, (tab) => {
 		if (chrome.runtime.lastError || !tab) return;
 		if (tab.windowId != null) chrome.windows.update(tab.windowId, { focused: true });
 		chrome.tabs.update(id, { active: true });
+		if (options.dismissDone && tabStates.get(id) === STATES.DONE) {
+			clearConversationRecord(id);
+		}
 	});
+}
+
+function clearConversationRecord(tabId) {
+	tabUrls.delete(tabId);
+	tabTitles.delete(tabId);
+	tabWindows.delete(tabId);
+	tabLastInputs.delete(tabId);
+	lastUpdateAt.delete(tabId);
+	conversationTabs.delete(tabId);
+	syncStore();
+	pushDesktopSnapshot();
 }
 
 // 启动时尝试连接桌面伴侣
