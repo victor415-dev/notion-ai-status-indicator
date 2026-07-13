@@ -143,6 +143,7 @@ function pushDesktopSnapshot() {
 		if (!desktopSocket || desktopSocket.readyState !== WebSocket.OPEN) return;
 		try {
 			const snapshot = buildSnapshot();
+			console.log("[NAI-BG] 桌面快照推送", snapshot.length, "notionTabs", notionTabs);
 			desktopSocket.send(JSON.stringify({ type: "snapshot", conversations: snapshot, notionTabs }));
 		} catch (e) {}
 	});
@@ -358,12 +359,14 @@ function handleStateMessage(msg, sender) {
 	const lastInput = trimText(msg.lastInput || "", 80);
 
 	if (shouldRecordConversation) {
+		const isNewConversation = !conversationTabs.has(conversationId);
 		conversationTabs.add(conversationId);
 		lastUpdateAt.set(conversationId, at);
 		if (msg.url) tabUrls.set(conversationId, msg.url);
 		if (title) tabTitles.set(conversationId, title);
 		if (lastInput) tabLastInputs.set(conversationId, lastInput);
 		if (sender.tab && sender.tab.windowId != null) tabWindows.set(conversationId, sender.tab.windowId);
+		console.log("[NAI-BG] 建档/更新记录", isNewConversation ? "new" : "update", "tab", tabId, "conversation", conversationId, "state", snapshotState);
 	}
 
 	updateTabBadge(tabId, msg.state, at);
@@ -705,6 +708,7 @@ function buildSnapshot() {
 
 function broadcastSnapshot() {
 	const conversations = buildSnapshot();
+	console.log("[NAI-BG] 快照推送", conversations.length);
 	queryNotionTabsCount((notionTabs) => {
 		const tabIds = new Set();
 		for (const tabId of conversationLastTabIds.values()) {

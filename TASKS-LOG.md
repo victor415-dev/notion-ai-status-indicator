@@ -173,3 +173,23 @@
 	- `cd desktop && npm start` launched Electron; with no extension WS client connected it logged `[NAI-PET] pet hidden disconnected` and was stopped with SIGINT after startup.
 - Remaining:
 	- Manual runtime acceptance still recommended in real Notion: switch between two conversations in one tab, start a new conversation before its title is generated, manually rename an open conversation, click cards after switching away, and confirm read-on-view removes only the visible completed conversation.
+
+## T-011
+- Date: 2026-07-13 (Asia/Shanghai)
+- Commit:
+	- this commit — restore card pipeline broken by T-010
+- Actual root cause:
+	- Reproduced in an end-to-end simulation: after T-010, a new task can emit the first interceptor `thinking` event before the isolated content script has installed its `window.message` listener. That broadcast was not replayed, so content never sent `NAI_STATE`, the service worker never built a record, and the desktop snapshot contained no card. The SW did not require `NAI_LOCATION` first; fallback tab compatibility worked once a `NAI_STATE` actually arrived.
+- Changes:
+	- src/content/interceptor.js: Added a bounded replay buffer for recent detector state events and a `__naiIndicatorReady` listener. Broadcast logs now use `[NAI-Indicator] broadcast ...`; replay logs use `[NAI-Indicator] replay ...`.
+	- src/content/content.js: Announces readiness several times during startup so the interceptor can replay buffered early events. Added duplicate event suppression by `reqId/state/streamEvent/at` and `[NAI-Indicator] report NAI_STATE ...` logging before sending to the service worker.
+	- src/background/service-worker.js: Added explicit `[NAI-BG] 建档/更新记录 ...`, `[NAI-BG] 快照推送 ...`, and `[NAI-BG] 桌面快照推送 ...` logs so future breakpoints can be located from the SW console.
+- Self test:
+	- `node --check src/content/interceptor.js` passed.
+	- `node --check src/content/content.js` passed.
+	- `node --check src/background/service-worker.js` passed.
+	- T-011 end-to-end simulation verified: interceptor broadcast happened before content loaded; content requested replay; content reported `thinking`; SW built a fallback `tab:<id>` record; desktop snapshot contained the running card.
+	- Regression simulations for T-007, T-008, T-009, and T-010 passed.
+	- `cd desktop && npm start` launched Electron; with no extension WS client connected it logged `[NAI-PET] pet hidden disconnected` and was stopped with SIGINT after startup.
+- Remaining:
+	- Manual runtime acceptance still required on real Notion: reload the extension, start a fresh normal or Research task, and confirm a card appears immediately and spins before T-009/T-010 acceptance continues.

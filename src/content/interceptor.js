@@ -10,6 +10,8 @@
 	const AI_URL_HINTS = [
 		"/api/v3/runinferencetranscript",
 	];
+	const REPLAY_BUFFER_MAX = 20;
+	const replayBuffer = [];
 
 	function isAiUrl(url) {
 		try {
@@ -90,11 +92,31 @@
 			{ __naiIndicator: true, source: "interceptor", state, at: Date.now() },
 			extra || {},
 		);
+		replayBuffer.push(detail);
+		if (replayBuffer.length > REPLAY_BUFFER_MAX) replayBuffer.shift();
 		// M1：先用日志肉眼确认时序是否准确
-		console.debug(TAG, state, detail);
+		console.debug(TAG, "broadcast", state, detail);
 		try {
 			window.postMessage(detail, "*");
 		} catch (e) {}
+	}
+
+	function replayBufferedEvents() {
+		for (const detail of replayBuffer) {
+			try {
+				console.debug(TAG, "replay", detail.state, detail);
+				window.postMessage(Object.assign({}, detail, { replay: true }), "*");
+			} catch (e) {}
+		}
+	}
+
+	if (typeof window.addEventListener === "function") {
+		window.addEventListener("message", (ev) => {
+			if (ev.source !== window) return;
+			const d = ev.data;
+			if (!d || d.__naiIndicatorReady !== true) return;
+			replayBufferedEvents();
+		});
 	}
 
 	function logStream(event, reqId, url) {

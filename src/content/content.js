@@ -23,6 +23,7 @@
     const MSG_FOCUS_TAB = "FOCUS_TAB";
 
     const conversations = new Map();
+    const seenDetectorEvents = new Set();
     let lastLocationKey = "";
 
     function isKnownState(state) {
@@ -93,6 +94,7 @@
         delete meta.forceReport;
         const conversationId = publicConversationId(key);
         try {
+            console.debug(TAG, "report NAI_STATE", state, { conversationId, pageConversationId: conversationIdFromUrl(), at: Date.now() });
             chrome.runtime.sendMessage(Object.assign({
                 type: "NAI_STATE",
                 state,
@@ -106,6 +108,13 @@
         } catch (e) {
             /* service worker 可能在重启，忽略 */
         }
+    }
+
+    function announceReadyForReplay() {
+        try {
+            window.postMessage({ __naiIndicatorReady: true, source: "content", at: Date.now() }, "*");
+            console.debug(TAG, "content ready replay requested", { at: Date.now() });
+        } catch (e) {}
     }
 
     function cancelDoneGrace(c, reason) {
@@ -256,8 +265,18 @@
             ensureConversation(key).lastInput = d.lastInput;
         }
         if (!isKnownState(d.state)) return;
+        if (d.reqId) {
+            const eventKey = `${d.reqId}|${d.state}|${d.streamEvent || ""}|${d.at || ""}`;
+            if (seenDetectorEvents.has(eventKey)) return;
+            seenDetectorEvents.add(eventKey);
+            if (seenDetectorEvents.size > 200) seenDetectorEvents.clear();
+        }
         applyDetectorState(d);
     });
+    announceReadyForReplay();
+    setTimeout(announceReadyForReplay, 0);
+    setTimeout(announceReadyForReplay, 250);
+    setTimeout(announceReadyForReplay, 1000);
 
     // ================= 画中画悬浮窗（Document Picture-in-Picture）=================
     // 纯扩展实现的系统级置顶小窗，浮于所有应用之上，实时显示所有 Notion AI 对话。
