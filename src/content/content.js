@@ -11,7 +11,10 @@
         DONE: "done",
     };
 
-    const DONE_RESET_MS = 6000;
+    const TAG = "[NAI-Indicator]";
+    const DONE_GRACE_MS = 5000;
+    const IDLE_FALLBACK_MS = 180000;
+    const DONE_RESET_MS = 180000;
 
     // 悬浮窗消息（须与 service-worker.js 一致）
     const MSG_GET_SNAPSHOT = "GET_SNAPSHOT";
@@ -20,7 +23,10 @@
 
     let current = STATES.IDLE;
     let resetTimer = null;
+    let doneGraceTimer = null;
+    let idleFallbackTimer = null;
     let lastInput = "";
+    const activeStreams = new Set();
 
     function isKnownState(state) {
         return state === STATES.IDLE ||
@@ -29,30 +35,118 @@
             state === STATES.DONE;
     }
 
-    function setState(next) {
+    function setState(next, extra) {
         if (!isKnownState(next)) return;
         clearTimeout(resetTimer);
         resetTimer = null;
-        if (next === current && next !== STATES.DONE) return;
+        const meta = extra || {};
+        if (next === current && next !== STATES.DONE && !meta.forceReport) return;
         current = next;
-        reportState(next);
+        reportState(next, meta);
         if (next === STATES.DONE) {
             resetTimer = setTimeout(() => setState(STATES.IDLE), DONE_RESET_MS);
         }
     }
 
-    function reportState(state) {
+    function reportState(state, extra) {
+        const meta = Object.assign({}, extra || {});
+        delete meta.forceReport;
         try {
-            chrome.runtime.sendMessage({
+            chrome.runtime.sendMessage(Object.assign({
                 type: "NAI_STATE",
                 state,
                 url: location.href,
                 title: document.title,
                 lastInput: lastInput || "",
                 at: Date.now(),
-            });
+            }, meta));
         } catch (e) {
             /* service worker 可能在重启，忽略 */
+        }
+    }
+
+    function cancelDoneGrace(reason) {
+        if (!doneGraceTimer) return;
+        clearTimeout(doneGraceTimer);
+        doneGraceTimer = null;
+        console.debug(TAG, "done grace cancel", { reason, activeStreams: activeStreams.size, at: Date.now() });
+    }
+
+    function clearIdleFallback() {
+        if (!idleFallbackTimer) return;
+        clearTimeout(idleFallbackTimer);
+        idleFallbackTimer = null;
+    }
+
+    function scheduleIdleFallback() {
+        clearIdleFallback();
+        idleFallbackTimer = setTimeout(() => {
+            idleFallbackTimer = null;
+            if (activeStreams.size > 0) return;
+            console.debug(TAG, "done reason idle-fallback", { at: Date.now() });
+            setState(STATES.DONE, { doneReason: "idle-fallback", forceReport: true });
+        }, IDLE_FALLBACK_MS);
+    }
+
+    function scheduleDoneGrace() {
+        clearIdleFallback();
+        if (doneGraceTimer) clearTimeout(doneGraceTimer);
+        console.debug(TAG, "done grace start", { activeStreams: activeStreams.size, at: Date.now() });
+        doneGraceTimer = setTimeout(() => {
+            doneGraceTimer = null;
+            if (activeStreams.size > 0) return;
+            console.debug(TAG, "done reason stream-closed", { at: Date.now() });
+            setState(STATES.DONE, { doneReason: "stream-closed", forceReport: true });
+        }, DONE_GRACE_MS);
+    }
+
+    function onStreamOpen(reqId) {
+        activeStreams.add(reqId);
+        cancelDoneGrace("new-stream");
+        clearIdleFallback();
+        setState(STATES.THINKING, { reqId, forceReport: true });
+    }
+
+    function onStreamResponding(reqId) {
+        if (reqId && !activeStreams.has(reqId)) activeStreams.add(reqId);
+        cancelDoneGrace("stream-responding");
+        clearIdleFallback();
+        setState(STATES.RESPONDING, { reqId, forceReport: true });
+    }
+
+    function onStreamClose(reqId) {
+        if (reqId) activeStreams.delete(reqId);
+        console.debug(TAG, "stream close observed", { reqId, activeStreams: activeStreams.size, at: Date.now() });
+        if (activeStreams.size === 0) scheduleDoneGrace();
+    }
+
+    function applyDetectorState(d) {
+        const reqId = d && d.reqId ? String(d.reqId) : "";
+        if (reqId && d.state === STATES.THINKING) {
+            onStreamOpen(reqId);
+            return;
+        }
+        if (reqId && d.state === STATES.RESPONDING) {
+            onStreamResponding(reqId);
+            return;
+        }
+        if (reqId && d.state === STATES.DONE) {
+            onStreamClose(reqId);
+            return;
+        }
+
+        if (d.state === STATES.THINKING || d.state === STATES.RESPONDING) {
+            cancelDoneGrace("legacy-running");
+            setState(d.state, { forceReport: true });
+            if (activeStreams.size === 0) scheduleIdleFallback();
+            return;
+        }
+        if (d.state === STATES.DONE) {
+            if (activeStreams.size === 0) scheduleDoneGrace();
+            return;
+        }
+        if (d.state === STATES.IDLE && activeStreams.size === 0 && !doneGraceTimer) {
+            setState(STATES.IDLE);
         }
     }
 
@@ -61,7 +155,8 @@
         const d = ev.data;
         if (!d || d.__naiIndicator !== true) return;
         if (typeof d.lastInput === "string") lastInput = d.lastInput;
-        setState(d.state);
+        if (!isKnownState(d.state)) return;
+        applyDetectorState(d);
     });
 
     // ================= 画中画悬浮窗（Document Picture-in-Picture）=================

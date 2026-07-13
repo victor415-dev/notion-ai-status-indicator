@@ -32,6 +32,10 @@
 		} catch (e) {}
 	}
 
+	function logStream(event, reqId, url) {
+		console.debug(TAG, `stream ${event}`, { reqId, url, at: Date.now() });
+	}
+
 	async function consumeStream(body, reqId, url) {
 		let first = true;
 		try {
@@ -47,7 +51,8 @@
 		} catch (e) {
 			// 读流异常也视为结束
 		} finally {
-			emit("done", { reqId, url });
+			logStream("close", reqId, url);
+			emit("done", { reqId, url, streamEvent: "close", doneReason: "stream-closed" });
 		}
 	}
 
@@ -58,7 +63,10 @@
 				input && typeof input === "object" && "url" in input ? input.url : input;
 			const aiHit = isAiUrl(url);
 			const reqId = aiHit ? Math.random().toString(36).slice(2) : null;
-			if (aiHit) emit("thinking", { url: String(url), reqId });
+			if (aiHit) {
+				logStream("open", reqId, String(url));
+				emit("thinking", { url: String(url), reqId, streamEvent: "open" });
+			}
 
 			const p = origFetch.apply(this, arguments);
 			if (!aiHit) return p;
@@ -70,15 +78,18 @@
 							// 用 clone() 读流，不影响页面对原始响应的消费
 							consumeStream(resp.clone().body, reqId, String(url));
 						} else {
-							emit("done", { url: String(url), reqId });
+							logStream("close", reqId, String(url));
+							emit("done", { url: String(url), reqId, streamEvent: "close", doneReason: "stream-closed" });
 						}
 					} catch (e) {
-						emit("done", { url: String(url), reqId });
+						logStream("close", reqId, String(url));
+						emit("done", { url: String(url), reqId, streamEvent: "close", doneReason: "stream-closed" });
 					}
 					return resp;
 				})
 				.catch((err) => {
-					emit("done", { url: String(url), reqId, error: true });
+					logStream("close", reqId, String(url));
+					emit("done", { url: String(url), reqId, streamEvent: "close", doneReason: "stream-closed", error: true });
 					throw err;
 				});
 		};
@@ -164,7 +175,6 @@
 			window.postMessage({
 				__naiIndicator: true,
 				source: "interceptor",
-				state: "idle",
 				at: Date.now(),
 				lastInput: lastInput || "",
 			}, "*");

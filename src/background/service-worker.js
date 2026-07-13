@@ -238,12 +238,24 @@ function handleStateMessage(msg, sender) {
 	const prev = tabStates.get(tabId);
 	const hasConversation = conversationTabs.has(tabId);
 	const shouldRecordConversation = msg.state !== STATES.IDLE || hasConversation;
+	const doneReason = typeof msg.doneReason === "string" ? msg.doneReason : "";
 	let snapshotState = msg.state;
 	if (msg.state === STATES.IDLE && hasConversation) {
-		snapshotState = STATES.DONE;
+		snapshotState = prev === STATES.DONE ? STATES.DONE : STATES.IDLE;
+		if (doneReason === "idle-fallback") {
+			snapshotState = STATES.DONE;
+			console.log("[NAI-BG] idle-fallback done", "tab", tabId);
+		}
 	}
 	tabStates.set(tabId, snapshotState);
 	console.log("[NAI-BG] 状态流", tabId, `${prev || "none"}→${snapshotState}`);
+	if (msg.state === STATES.DONE && doneReason) {
+		if (doneReason === "idle-fallback") {
+			console.log("[NAI-BG] idle-fallback done", "tab", tabId);
+		} else {
+			console.log("[NAI-BG] done reason", doneReason, "tab", tabId);
+		}
+	}
 
 	const titleFromSender = sender.tab && sender.tab.title ? sender.tab.title : "";
 	const titleFromMsg = msg.title ? msg.title : "";
