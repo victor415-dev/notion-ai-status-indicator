@@ -85,6 +85,33 @@ function currentConversationIdForTab(tabId, tab) {
 	return tabCurrentConversationIds.get(tabId) || "";
 }
 
+function urlBelongsToConversation(url, conversationId) {
+	if (!url || !conversationId || isFallbackConversationId(conversationId)) return false;
+	return conversationIdFromUrl(url) === conversationId;
+}
+
+function stableConversationUrl(conversationId, preferredUrl) {
+	if (urlBelongsToConversation(preferredUrl, conversationId)) return preferredUrl;
+	if (!isFallbackConversationId(conversationId)) return conversationUrl(conversationId);
+	return preferredUrl || "";
+}
+
+function logTitleSyncSkipped(conversationId, actualUrl, actualConversationId, candidateTitle, reason) {
+	console.log(
+		"[NAI-BG] title sync skipped",
+		"conversation",
+		conversationId,
+		"url",
+		actualUrl || "",
+		"actual",
+		actualConversationId || "",
+		"title",
+		candidateTitle || "",
+		"reason",
+		reason,
+	);
+}
+
 // ================= 桌面伴侣 WebSocket（Codex 式常驻置顶）=================
 const DESKTOP_WS_URL = "ws://127.0.0.1:8787";
 const DESKTOP_RECONNECT_MS = 5000;
@@ -355,6 +382,9 @@ function handleStateMessage(msg, sender) {
 	const titleFromSender = sender.tab && sender.tab.title ? sender.tab.title : "";
 	const titleFromMsg = msg.title ? msg.title : "";
 	const title = cleanTitle(titleFromMsg || titleFromSender);
+	const actualUrl = (sender.tab && sender.tab.url) || msg.url || "";
+	const actualConversationId = conversationIdFromUrl(actualUrl);
+	const canSyncPageMeta = isFallbackConversationId(conversationId) || actualConversationId === conversationId;
 
 	const lastInput = trimText(msg.lastInput || "", 80);
 
@@ -362,8 +392,23 @@ function handleStateMessage(msg, sender) {
 		const isNewConversation = !conversationTabs.has(conversationId);
 		conversationTabs.add(conversationId);
 		lastUpdateAt.set(conversationId, at);
-		if (msg.url) tabUrls.set(conversationId, msg.url);
-		if (title) tabTitles.set(conversationId, title);
+		if (canSyncPageMeta) {
+			if (msg.url) tabUrls.set(conversationId, msg.url);
+			if (title) tabTitles.set(conversationId, title);
+		} else {
+			const existingUrl = tabUrls.get(conversationId);
+			tabUrls.set(conversationId, stableConversationUrl(conversationId, existingUrl));
+			if (!tabTitles.get(conversationId)) tabTitles.set(conversationId, "Notion AI 对话");
+			if (title) {
+				logTitleSyncSkipped(
+					conversationId,
+					actualUrl,
+					actualConversationId,
+					title,
+					actualConversationId ? "different-conversation" : "no-conversation-in-url",
+				);
+			}
+		}
 		if (lastInput) tabLastInputs.set(conversationId, lastInput);
 		if (sender.tab && sender.tab.windowId != null) tabWindows.set(conversationId, sender.tab.windowId);
 		console.log("[NAI-BG] 建档/更新记录", isNewConversation ? "new" : "update", "tab", tabId, "conversation", conversationId, "state", snapshotState);
@@ -374,7 +419,7 @@ function handleStateMessage(msg, sender) {
 	if (msg.state === STATES.DONE) {
 		recentDoneAt.set(conversationId, at);
 		if (prev !== STATES.DONE && shouldNotifyDone(conversationId, at)) {
-			notifyDone(conversationId, msg.url || tabUrls.get(conversationId));
+			notifyDone(conversationId, stableConversationUrl(conversationId, tabUrls.get(conversationId) || msg.url));
 			playSound();
 		}
 	}

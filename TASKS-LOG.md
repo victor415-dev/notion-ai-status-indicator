@@ -211,3 +211,21 @@
 	- F: T-009 stream lifecycle and T-011 first-card pipeline regression simulations passed.
 - Remaining:
 	- Manual runtime acceptance recommended: from a completed card whose last tab is currently on Marketplace or another Notion page, click the card and confirm Chrome navigates back to the exact AI conversation.
+
+## Title contamination fix
+- Date: 2026-07-13 (Asia/Shanghai)
+- Commit:
+	- this commit — prevent non-chat pages from overwriting conversation titles
+- Actual root cause:
+	- Confirmed: state events still carry the original `conversationId` after the tab navigates away, but `msg.title` / `msg.url` reflect the current non-chat page. `handleStateMessage` wrote those fields directly into the conversation record without checking whether the current tab URL actually belonged to that conversation.
+- Changes:
+	- src/background/service-worker.js: Title and URL updates from `NAI_STATE` are now accepted only when the actual `sender.tab.url` (falling back to `msg.url`) has `?t=` exactly equal to the target `conversationId`. Non-chat pages, pages without `?t=`, and other conversations no longer overwrite stored title/url. Existing chat URL is preserved, or `https://app.notion.com/chat?t=<conversationId>` is used as a stable URL fallback. Added `[NAI-BG] title sync skipped ...` logging with conversationId, actual URL, actual `?t=`, candidate title, and skip reason.
+- Self test:
+	- A: Target conversation title `目标对话` stayed unchanged when a later done event arrived from `/marketplace` with title `Marketplace`; URL stayed `https://app.notion.com/chat?t=target`.
+	- B: A normal Notion page with no `?t=` did not overwrite the conversation title or chat URL.
+	- C: `/chat?t=other` did not overwrite the target conversation title.
+	- D: `/chat?t=target` allowed a rename/title update.
+	- E: Previous non-chat-page card focus navigation simulation still passed: done card click removed the completed record, running card click kept it, and navigation returned to the target conversation.
+	- F: T-009 stream lifecycle and T-011 first-card pipeline regression simulations passed.
+- Remaining:
+	- Manual runtime acceptance recommended: start a task, leave its tab on Marketplace before completion, and confirm the finished card keeps the AI conversation title while still clicking back to the conversation.
