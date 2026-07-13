@@ -138,6 +138,7 @@ function focusLatestNotionTab() {
 			if (chrome.runtime.lastError || !tab) return;
 			if (tab.windowId != null) chrome.windows.update(tab.windowId, { focused: true });
 			chrome.tabs.update(bestTabId, { active: true });
+			markConversationRead(bestTabId);
 		});
 		return;
 	}
@@ -151,7 +152,10 @@ function focusLatestNotionTab() {
 			return;
 		}
 		if (t.windowId != null) chrome.windows.update(t.windowId, { focused: true });
-		if (t.id != null) chrome.tabs.update(t.id, { active: true });
+		if (t.id != null) {
+			chrome.tabs.update(t.id, { active: true });
+			markConversationRead(t.id);
+		}
 	});
 }
 // ============================================================================
@@ -257,9 +261,12 @@ function handleStateMessage(msg, sender) {
 		}
 	}
 
-	updateGlobalBadge();
-	syncStore();
-	pushDesktopSnapshot(); // 状态变化时推给桌面伴侣
+	if (msg.state === STATES.DONE) {
+		markReadIfViewed(tabId, sender.tab, finishStateMessage);
+		return;
+	}
+
+	finishStateMessage();
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
@@ -270,6 +277,23 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 	if (changeInfo.status === "loading") {
 		clearTabState(tabId);
 	}
+});
+
+chrome.tabs.onActivated.addListener((activeInfo) => {
+	chrome.tabs.get(activeInfo.tabId, (tab) => {
+		if (chrome.runtime.lastError || !tab) return;
+		markReadIfViewed(activeInfo.tabId, tab);
+	});
+});
+
+chrome.windows.onFocusChanged.addListener((windowId) => {
+	if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+	chrome.tabs.query({ active: true, windowId }, (tabs) => {
+		if (chrome.runtime.lastError || !Array.isArray(tabs) || !tabs.length) return;
+		const tab = tabs[0];
+		if (!tab || tab.id == null) return;
+		markReadIfViewed(tab.id, tab);
+	});
 });
 
 chrome.notifications.onClicked.addListener((notificationId) => {
@@ -284,6 +308,7 @@ chrome.notifications.onClicked.addListener((notificationId) => {
 			chrome.windows.update(tab.windowId, { focused: true });
 		}
 		chrome.tabs.update(tabId, { active: true });
+		markConversationRead(tabId);
 		chrome.notifications.clear(notificationId);
 		notificationTabs.delete(notificationId);
 	});
@@ -306,6 +331,25 @@ function normalizeTime(at) {
 
 function isRunningState(state) {
 	return state === STATES.THINKING || state === STATES.RESPONDING;
+}
+
+function finishStateMessage() {
+	updateGlobalBadge();
+	syncStore();
+	pushDesktopSnapshot(); // 状态变化时推给桌面伴侣
+}
+
+function markReadIfViewed(tabId, tab, after = null) {
+	if (!tab || !tab.active || tab.windowId == null) {
+		if (after) after();
+		return;
+	}
+	chrome.windows.get(tab.windowId, (win) => {
+		if (!chrome.runtime.lastError && win && win.focused) {
+			markConversationRead(tabId, { deferSync: Boolean(after) });
+		}
+		if (after) after();
+	});
 }
 
 // 把当前所有对话镜像到 session 存储，供弹出面板读取（面板不必唤醒 SW 即可拿到最新列表）；同时广播给所有悬浮窗。
@@ -522,20 +566,24 @@ function focusTab(tabId, windowId, options = {}) {
 		if (tab.windowId != null) chrome.windows.update(tab.windowId, { focused: true });
 		chrome.tabs.update(id, { active: true });
 		if (options.dismissDone && tabStates.get(id) === STATES.DONE) {
-			clearConversationRecord(id);
+			markConversationRead(id);
 		}
 	});
 }
 
-function clearConversationRecord(tabId) {
+function markConversationRead(tabId, options = {}) {
+	if (!conversationTabs.has(tabId) || tabStates.get(tabId) !== STATES.DONE) return false;
 	tabUrls.delete(tabId);
 	tabTitles.delete(tabId);
 	tabWindows.delete(tabId);
 	tabLastInputs.delete(tabId);
 	lastUpdateAt.delete(tabId);
 	conversationTabs.delete(tabId);
-	syncStore();
-	pushDesktopSnapshot();
+	if (!options.deferSync) {
+		syncStore();
+		pushDesktopSnapshot();
+	}
+	return true;
 }
 
 // 启动时尝试连接桌面伴侣

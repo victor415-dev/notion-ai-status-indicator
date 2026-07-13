@@ -100,3 +100,17 @@
 	- `cd desktop && npm start` launched Electron without JS startup errors and was stopped with SIGINT after startup.
 - Remaining:
 	- Manual runtime acceptance still recommended: close all Notion tabs and click the pet icon to confirm a new Notion AI tab opens; click a completed card to confirm it disappears, while clicking a running card keeps it visible.
+
+## T-007
+- Date: 2026-07-13 (Asia/Shanghai)
+- Commit:
+	- this commit — unified read-on-view dismissal
+- Changes:
+	- src/background/service-worker.js: Added unified read dismissal through `markConversationRead(tabId)`. Done conversations are dismissed when the tracked tab is actually viewed via tab activation, Chrome window focus, notification click, explicit card focus, latest focus, or when a done state arrives while the tab is already active in a focused window. Running conversations are preserved. Done notifications still fire on real done reports.
+	- desktop/renderer/renderer.js: Reviewed only; no code change needed because cards are snapshot-driven, card clicks send explicit tab ids, and icon clicks send `latest`.
+- Self test:
+	- `node --check src/background/service-worker.js` passed.
+	- `node --check desktop/renderer/renderer.js` passed.
+	- Simulated service worker messages/events verified: foreground done reports notify but do not create a card; notification clicks dismiss; explicit done card focus dismisses; explicit running card focus keeps the card; `latest` dismisses only the located done record; tab activation/window focus dismiss done records; repeated calls are idempotent.
+- Remaining:
+	- Manual runtime acceptance still recommended for the full Chrome/Electron path: notification click, card click, icon click, manual tab switch, and foreground completion should all remove only viewed completed cards.
