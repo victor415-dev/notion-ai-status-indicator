@@ -135,13 +135,18 @@ html, body {
 	height: 24px;
 	min-width: 24px;
 	border-radius: 999px;
-	border: 1px solid rgba(15, 23, 42, 0.12);
-	background: #ffffff;
+	border: none;
+	background: #e4e4e7;
 	cursor: pointer;
 	padding: 0;
-	color: #334155;
-	font-size: 13px;
-	line-height: 22px;
+	color: #52525b;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.collapse:hover {
+	background: #d4d4d8;
 }
 
 .badge {
@@ -164,7 +169,12 @@ html, body {
 	.card:hover { background: #27272a; }
 	.card-title { color: #f8fafc; }
 	.card-sub { color: #9aa2ab; }
-	.collapse,
+	.collapse {
+		background: #3f3f46;
+		border: none;
+		color: #d4d4d8;
+	}
+	.collapse:hover { background: #52525b; }
 	.badge {
 		border-color: #3f3f46;
 		background: #18181b;

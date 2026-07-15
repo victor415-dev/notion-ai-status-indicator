@@ -255,3 +255,16 @@
 	- `cd desktop && npm start` launched Electron successfully; with no extension WS client it logged `[NAI-PET] pet hidden disconnected` and was stopped with SIGINT after startup.
 - Remaining:
 	- Manual runtime acceptance still recommended in real Notion/Electron: verify live reply preview updates during generation, completed cards retain the final preview, collapse control sits on the pet top-right, and multiple concurrent conversations do not mix reply text.
+
+## T-012b
+- Date: 2026-07-15 (Asia/Shanghai)
+- Commit:
+	- this commit — Codex-style collapse chevron
+- Changes:
+	- desktop/renderer/index.html: Replaced the text `˅` collapse glyph with the locked inline SVG chevron path using rounded stroke caps and joins.
+	- desktop/renderer/styles.css: Changed `.collapse` to a 24px solid gray circle with no border, centered SVG layout, light hover fill, and an independent dark-mode rule. The pet top-right absolute positioning remains unchanged, and `.badge` dark-mode styling remains unchanged.
+- Self test:
+	- `/tmp/t012b-test.mjs` passed: collapse SVG replacement, no text glyph, solid no-border light/dark collapse colors, SVG centering, unchanged pet overlay positioning, unchanged dark badge rule, T-012 white cards/no shadow/no backdrop, reply preview path, and collapse/badge click handlers were all asserted.
+	- `cd desktop && npm start` launched Electron successfully; with no extension WS client it logged `[NAI-PET] pet hidden disconnected` and was stopped with SIGINT after startup.
+- Remaining:
+	- Manual runtime acceptance recommended for final visual comparison against Codex: expanded card list should show the shallow gray circular chevron at the pet top-right, and collapsed badge/expand interaction should remain unchanged.
