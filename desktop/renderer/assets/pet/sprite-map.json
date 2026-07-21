@@ -1,0 +1,660 @@
+{
+  "frameSize": {
+    "width": 192,
+    "height": 192
+  },
+  "releaseFrame": 5,
+  "frameMs": {
+    "idle": 140,
+    "hover": 120,
+    "waiting": 140,
+    "throw": 80,
+    "done": 120,
+    "plane": 90,
+    "planeLand": 110
+  },
+  "states": {
+    "idle": [
+      "assets/pet/frames/idle_00.png",
+      "assets/pet/frames/idle_01.png",
+      "assets/pet/frames/idle_02.png",
+      "assets/pet/frames/idle_03.png",
+      "assets/pet/frames/idle_04.png",
+      "assets/pet/frames/idle_05.png"
+    ],
+    "hover": [
+      "assets/pet/frames/hover_00.png",
+      "assets/pet/frames/hover_01.png",
+      "assets/pet/frames/hover_02.png",
+      "assets/pet/frames/hover_03.png"
+    ],
+    "waiting": [
+      "assets/pet/frames/wait_00.png",
+      "assets/pet/frames/wait_01.png",
+      "assets/pet/frames/wait_02.png",
+      "assets/pet/frames/wait_03.png",
+      "assets/pet/frames/wait_04.png",
+      "assets/pet/frames/wait_05.png"
+    ],
+    "throw": [
+      "assets/pet/frames/throw_00.png",
+      "assets/pet/frames/throw_01.png",
+      "assets/pet/frames/throw_02.png",
+      "assets/pet/frames/throw_03.png",
+      "assets/pet/frames/throw_04.png",
+      "assets/pet/frames/throw_05.png",
+      "assets/pet/frames/throw_06.png",
+      "assets/pet/frames/throw_07.png"
+    ],
+    "done": [
+      "assets/pet/frames/done_00.png",
+      "assets/pet/frames/done_01.png",
+      "assets/pet/frames/done_02.png",
+      "assets/pet/frames/done_03.png"
+    ],
+    "plane": [
+      "assets/pet/frames/plane_00.png",
+      "assets/pet/frames/plane_01.png",
+      "assets/pet/frames/plane_02.png",
+      "assets/pet/frames/plane_03.png",
+      "assets/pet/frames/plane_04.png",
+      "assets/pet/frames/plane_05.png"
+    ],
+    "planeLand": [
+      "assets/pet/frames/plane_land_00.png",
+      "assets/pet/frames/plane_land_01.png"
+    ]
+  },
+  "missingFrames": {
+    "done_03": "done_02",
+    "throw_03": "throw_02",
+    "throw_06": "throw_07"
+  },
+  "source": {
+    "image": "assets/pet-spritesheet.png",
+    "size": {
+      "width": 1024,
+      "height": 1024
+    },
+    "extracted": {
+      "idle_00": {
+        "name": "idle_00",
+        "sourceBox": [
+          4,
+          24,
+          167,
+          166
+        ],
+        "spriteBox": [
+          15,
+          29,
+          138,
+          166
+        ],
+        "output": "assets/pet/frames/idle_00.png"
+      },
+      "idle_01": {
+        "name": "idle_01",
+        "sourceBox": [
+          175,
+          24,
+          337,
+          166
+        ],
+        "spriteBox": [
+          184,
+          29,
+          308,
+          166
+        ],
+        "output": "assets/pet/frames/idle_01.png"
+      },
+      "idle_02": {
+        "name": "idle_02",
+        "sourceBox": [
+          345,
+          24,
+          508,
+          166
+        ],
+        "spriteBox": [
+          355,
+          29,
+          478,
+          166
+        ],
+        "output": "assets/pet/frames/idle_02.png"
+      },
+      "idle_03": {
+        "name": "idle_03",
+        "sourceBox": [
+          516,
+          24,
+          679,
+          166
+        ],
+        "spriteBox": [
+          525,
+          29,
+          649,
+          166
+        ],
+        "output": "assets/pet/frames/idle_03.png"
+      },
+      "idle_04": {
+        "name": "idle_04",
+        "sourceBox": [
+          687,
+          24,
+          849,
+          166
+        ],
+        "spriteBox": [
+          697,
+          29,
+          821,
+          166
+        ],
+        "output": "assets/pet/frames/idle_04.png"
+      },
+      "idle_05": {
+        "name": "idle_05",
+        "sourceBox": [
+          857,
+          24,
+          1020,
+          166
+        ],
+        "spriteBox": [
+          867,
+          29,
+          991,
+          166
+        ],
+        "output": "assets/pet/frames/idle_05.png"
+      },
+      "hover_00": {
+        "name": "hover_00",
+        "sourceBox": [
+          175,
+          194,
+          337,
+          342
+        ],
+        "spriteBox": [
+          184,
+          216,
+          311,
+          342
+        ],
+        "output": "assets/pet/frames/hover_00.png"
+      },
+      "hover_01": {
+        "name": "hover_01",
+        "sourceBox": [
+          345,
+          194,
+          508,
+          342
+        ],
+        "spriteBox": [
+          355,
+          212,
+          480,
+          342
+        ],
+        "output": "assets/pet/frames/hover_01.png"
+      },
+      "hover_02": {
+        "name": "hover_02",
+        "sourceBox": [
+          516,
+          194,
+          679,
+          342
+        ],
+        "spriteBox": [
+          525,
+          211,
+          660,
+          342
+        ],
+        "output": "assets/pet/frames/hover_02.png"
+      },
+      "hover_03": {
+        "name": "hover_03",
+        "sourceBox": [
+          687,
+          194,
+          849,
+          342
+        ],
+        "spriteBox": [
+          694,
+          210,
+          826,
+          342
+        ],
+        "output": "assets/pet/frames/hover_03.png"
+      },
+      "wait_00": {
+        "name": "wait_00",
+        "sourceBox": [
+          4,
+          392,
+          167,
+          548
+        ],
+        "spriteBox": [
+          16,
+          392,
+          140,
+          541
+        ],
+        "output": "assets/pet/frames/wait_00.png"
+      },
+      "wait_01": {
+        "name": "wait_01",
+        "sourceBox": [
+          175,
+          392,
+          337,
+          548
+        ],
+        "spriteBox": [
+          185,
+          395,
+          309,
+          541
+        ],
+        "output": "assets/pet/frames/wait_01.png"
+      },
+      "wait_02": {
+        "name": "wait_02",
+        "sourceBox": [
+          345,
+          392,
+          508,
+          548
+        ],
+        "spriteBox": [
+          355,
+          395,
+          480,
+          541
+        ],
+        "output": "assets/pet/frames/wait_02.png"
+      },
+      "wait_03": {
+        "name": "wait_03",
+        "sourceBox": [
+          516,
+          392,
+          679,
+          548
+        ],
+        "spriteBox": [
+          526,
+          392,
+          648,
+          540
+        ],
+        "output": "assets/pet/frames/wait_03.png"
+      },
+      "wait_04": {
+        "name": "wait_04",
+        "sourceBox": [
+          687,
+          392,
+          849,
+          548
+        ],
+        "spriteBox": [
+          696,
+          395,
+          821,
+          541
+        ],
+        "output": "assets/pet/frames/wait_04.png"
+      },
+      "wait_05": {
+        "name": "wait_05",
+        "sourceBox": [
+          857,
+          392,
+          1020,
+          548
+        ],
+        "spriteBox": [
+          867,
+          395,
+          990,
+          540
+        ],
+        "output": "assets/pet/frames/wait_05.png"
+      },
+      "throw_00": {
+        "name": "throw_00",
+        "sourceBox": [
+          4,
+          566,
+          167,
+          724
+        ],
+        "spriteBox": [
+          16,
+          567,
+          139,
+          712
+        ],
+        "output": "assets/pet/frames/throw_00.png"
+      },
+      "throw_01": {
+        "name": "throw_01",
+        "sourceBox": [
+          175,
+          566,
+          337,
+          724
+        ],
+        "spriteBox": [
+          185,
+          568,
+          308,
+          712
+        ],
+        "output": "assets/pet/frames/throw_01.png"
+      },
+      "throw_02": {
+        "name": "throw_02",
+        "sourceBox": [
+          345,
+          566,
+          508,
+          724
+        ],
+        "spriteBox": [
+          347,
+          566,
+          508,
+          711
+        ],
+        "output": "assets/pet/frames/throw_02.png"
+      },
+      "throw_04": {
+        "name": "throw_04",
+        "sourceBox": [
+          516,
+          566,
+          679,
+          724
+        ],
+        "spriteBox": [
+          516,
+          567,
+          679,
+          711
+        ],
+        "output": "assets/pet/frames/throw_04.png"
+      },
+      "throw_05": {
+        "name": "throw_05",
+        "sourceBox": [
+          687,
+          566,
+          849,
+          724
+        ],
+        "spriteBox": [
+          693,
+          566,
+          834,
+          711
+        ],
+        "output": "assets/pet/frames/throw_05.png"
+      },
+      "throw_07": {
+        "name": "throw_07",
+        "sourceBox": [
+          857,
+          566,
+          1020,
+          724
+        ],
+        "spriteBox": [
+          857,
+          567,
+          970,
+          710
+        ],
+        "output": "assets/pet/frames/throw_07.png"
+      },
+      "plane_00": {
+        "name": "plane_00",
+        "sourceBox": [
+          12,
+          758,
+          159,
+          854
+        ],
+        "spriteBox": [
+          25,
+          758,
+          153,
+          836
+        ],
+        "output": "assets/pet/frames/plane_00.png"
+      },
+      "plane_01": {
+        "name": "plane_01",
+        "sourceBox": [
+          183,
+          758,
+          329,
+          854
+        ],
+        "spriteBox": [
+          190,
+          758,
+          324,
+          837
+        ],
+        "output": "assets/pet/frames/plane_01.png"
+      },
+      "plane_02": {
+        "name": "plane_02",
+        "sourceBox": [
+          353,
+          758,
+          500,
+          854
+        ],
+        "spriteBox": [
+          363,
+          758,
+          493,
+          833
+        ],
+        "output": "assets/pet/frames/plane_02.png"
+      },
+      "plane_03": {
+        "name": "plane_03",
+        "sourceBox": [
+          524,
+          758,
+          671,
+          854
+        ],
+        "spriteBox": [
+          524,
+          758,
+          669,
+          822
+        ],
+        "output": "assets/pet/frames/plane_03.png"
+      },
+      "plane_04": {
+        "name": "plane_04",
+        "sourceBox": [
+          695,
+          758,
+          841,
+          854
+        ],
+        "spriteBox": [
+          695,
+          758,
+          841,
+          825
+        ],
+        "output": "assets/pet/frames/plane_04.png"
+      },
+      "plane_05": {
+        "name": "plane_05",
+        "sourceBox": [
+          865,
+          758,
+          1012,
+          854
+        ],
+        "spriteBox": [
+          866,
+          765,
+          1012,
+          822
+        ],
+        "output": "assets/pet/frames/plane_05.png"
+      },
+      "plane_land_00": {
+        "name": "plane_land_00",
+        "sourceBox": [
+          8,
+          862,
+          163,
+          972
+        ],
+        "spriteBox": [
+          17,
+          919,
+          163,
+          972
+        ],
+        "output": "assets/pet/frames/plane_land_00.png"
+      },
+      "plane_land_01": {
+        "name": "plane_land_01",
+        "sourceBox": [
+          179,
+          862,
+          333,
+          972
+        ],
+        "spriteBox": [
+          182,
+          934,
+          329,
+          972
+        ],
+        "output": "assets/pet/frames/plane_land_01.png"
+      },
+      "done_00": {
+        "name": "done_00",
+        "sourceBox": [
+          345,
+          862,
+          508,
+          1018
+        ],
+        "spriteBox": [
+          366,
+          870,
+          485,
+          1004
+        ],
+        "output": "assets/pet/frames/done_00.png"
+      },
+      "done_01": {
+        "name": "done_01",
+        "sourceBox": [
+          516,
+          862,
+          679,
+          1018
+        ],
+        "spriteBox": [
+          533,
+          869,
+          651,
+          1018
+        ],
+        "output": "assets/pet/frames/done_01.png"
+      },
+      "done_02": {
+        "name": "done_02",
+        "sourceBox": [
+          687,
+          862,
+          849,
+          1018
+        ],
+        "spriteBox": [
+          702,
+          869,
+          820,
+          1018
+        ],
+        "output": "assets/pet/frames/done_02.png"
+      },
+      "done_03": {
+        "name": "done_03",
+        "sourceBox": [
+          857,
+          862,
+          1020,
+          1018
+        ],
+        "spriteBox": [
+          871,
+          870,
+          989,
+          1018
+        ],
+        "output": "assets/pet/frames/done_03.png"
+      },
+      "throw_03": {
+        "name": "throw_03",
+        "sourceBox": [
+          345,
+          566,
+          508,
+          724
+        ],
+        "spriteBox": [
+          347,
+          566,
+          508,
+          711
+        ],
+        "output": "assets/pet/frames/throw_03.png",
+        "reusedFrom": "throw_02"
+      },
+      "throw_06": {
+        "name": "throw_06",
+        "sourceBox": [
+          857,
+          566,
+          1020,
+          724
+        ],
+        "spriteBox": [
+          857,
+          567,
+          970,
+          710
+        ],
+        "output": "assets/pet/frames/throw_06.png",
+        "reusedFrom": "throw_07"
+      }
+    }
+  }
+}

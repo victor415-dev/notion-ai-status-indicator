@@ -296,3 +296,24 @@
 	- T-012/T-012b card rendering, SVG chevron, and T-012c expand/collapse occupancy rules remain unchanged by inspection.
 - Remaining:
 	- Manual runtime acceptance still recommended if you want final on-screen comparison against the lighter Codex reference circle tint.
+
+## T-013
+- Date: 2026-07-21 (Asia/Shanghai)
+- Commit:
+	- 7cdfa2a14eca77a5a06b5ffc90acc4e2829720e9
+- Unblocked:
+	- Fetched `desktop/renderer/assets/pet-spritesheet.png` directly from the Notion task page section `T-013 素材源（分镜总图 · Codex 下载此图）` using the existing Notion REST token flow.
+- Changes:
+	- desktop/renderer/assets/pet-spritesheet.png: downloaded the contact sheet asset from Notion.
+	- desktop/renderer/assets/pet/frames/*: cut the sprite frames for idle/hover/wait/throw/plane/plane_land/done and kept the required nearest-neighbor reuse entries.
+	- desktop/renderer/assets/pet/sprite-map.json: recorded frame timing, `releaseFrame: 5`, extracted frame provenance, and reuse metadata.
+	- desktop/main.js: added the plane window, plane spawn/focus plumbing, visibility coordination, and the pet-position lazy path; also fixed the stale `planeIgnoreCount` reference.
+	- desktop/preload.js: exposed sprite-map loading and plane IPC bridges.
+	- desktop/renderer/index.html, renderer.js, styles.css: wired the sprite image pet, reply preview cards, and throw-triggered plane spawn behavior while keeping the T-012 card layout intact.
+	- desktop/renderer/planes.html, planes.css, planes.js: added the transparent plane layer and landing/click behavior.
+- Self test:
+	- `node --check desktop/main.js`, `desktop/preload.js`, `desktop/renderer/renderer.js`, and `desktop/renderer/planes.js` passed.
+	- Visual QA on `pet-spritesheet.png` and representative frames passed after frame extraction; `done_03` was normalized by nearest-neighbor reuse from `done_02` to remove the source blemish.
+	- `npm start` in `desktop/` still aborts with `SIGABRT` in this sandbox before any app log appears, so full GUI smoke testing remains limited by the environment here.
+- Remaining:
+	- Final commit SHA and push result still pending.

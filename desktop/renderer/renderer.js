@@ -4,43 +4,273 @@ const petEl = document.getElementById("pet");
 const cardsEl = document.getElementById("cards");
 const collapseEl = document.getElementById("collapse");
 const badgeEl = document.getElementById("badge");
-const petIconEl = petEl.querySelector(".pet-icon");
+const petSpriteEl = document.getElementById("pet-sprite");
 
 const DRAG_THRESHOLD_PX = 4;
 
 const RANK = { thinking: 0, responding: 0, done: 1, idle: 2 };
 
+const SPRITE_FALLBACKS = {
+	idle: "idle_00",
+	hover: "hover_00",
+	waiting: "wait_00",
+	throw: "throw_07",
+	done: "done_00",
+	plane: "plane_00",
+	planeLand: "plane_land_00",
+};
+
 let snapshot = [];
 let collapsed = false;
 let drag = null; // { startScreenX, startScreenY, moved, movingWindow }
+let spriteMap = null;
+let spriteReady = false;
+let spriteVisible = true;
+let spriteHovered = false;
+let spriteDragging = false;
+let spriteWaiting = false;
+let spriteReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+let spritePrevStates = new Map();
+let spriteInitialized = false;
+let spriteCurrentMode = "idle";
+let spriteLoopIndex = 0;
+let spriteLoopTimer = null;
+let spriteThrowRaf = 0;
+let spriteThrowTimer = 0;
+let spriteDoneTimer = 0;
+let spriteDoneUntil = 0;
+let activeThrow = null; // { key, conversationId, tabId, title, spawned }
+const throwQueue = [];
+const queuedThrowKeys = new Set();
 
-function renderPetSvg() {
-	petIconEl.innerHTML = `
-		<svg viewBox="0 0 56 56" width="56" height="56" role="img" aria-label="Notion AI Pet" xmlns="http://www.w3.org/2000/svg">
-			<defs>
-				<radialGradient id="pet-hi" cx="30%" cy="20%" r="70%">
-					<stop offset="0" stop-color="#8fc0ff"/>
-					<stop offset="0.58" stop-color="#6aa8ff" stop-opacity="0"/>
-				</radialGradient>
-				<linearGradient id="pet-bg" x1="0" y1="0" x2="0" y2="1">
-					<stop offset="0" stop-color="#5ea2ff"/>
-					<stop offset="0.55" stop-color="#2f6fed"/>
-					<stop offset="1" stop-color="#1e4fd8"/>
-				</linearGradient>
-				<filter id="pet-shadow" x="-20%" y="-20%" width="140%" height="140%">
-					<feDropShadow dx="0" dy="1" stdDeviation="0.5" flood-color="#000" flood-opacity="0.18"/>
-				</filter>
-			</defs>
-			<circle cx="28" cy="28" r="28" fill="url(#pet-bg)"/>
-			<circle cx="28" cy="28" r="28" fill="url(#pet-hi)"/>
-			<g fill="#fff" filter="url(#pet-shadow)">
-				<circle cx="22" cy="19" r="4"/>
-				<circle cx="34" cy="18" r="4"/>
-				<circle cx="19" cy="30" r="4"/>
-				<circle cx="37" cy="30" r="4"/>
-				<ellipse cx="28" cy="34" rx="7" ry="7.5"/>
-			</g>
-		</svg>`;
+function loadSpriteMap() {
+	try {
+		if (window.naiBridge && typeof window.naiBridge.loadPetSpriteMap === "function") {
+			const map = window.naiBridge.loadPetSpriteMap();
+			if (map && map.states) return map;
+		}
+	} catch (e) {}
+	return null;
+}
+
+function frameRel(name) {
+	return `assets/pet/frames/${name}.png`;
+}
+
+function spriteFrames(mode) {
+	if (!spriteMap || !spriteMap.states) return [];
+	const frames = spriteMap.states[mode];
+	return Array.isArray(frames) ? frames : [];
+}
+
+function spriteFrameMs(mode) {
+	if (spriteMap && spriteMap.frameMs && Number.isFinite(spriteMap.frameMs[mode])) return Number(spriteMap.frameMs[mode]);
+	return { idle: 140, hover: 120, waiting: 140, done: 120, throw: 80, plane: 90, planeLand: 110 }[mode] || 120;
+}
+
+function setSpriteFrame(relPath) {
+	if (!petSpriteEl || !relPath) return;
+	const next = `./${relPath}`;
+	if (petSpriteEl.getAttribute("src") !== next) petSpriteEl.setAttribute("src", next);
+}
+
+function clearSpriteTimers() {
+	if (spriteLoopTimer) {
+		clearTimeout(spriteLoopTimer);
+		spriteLoopTimer = null;
+	}
+	if (spriteThrowRaf) {
+		cancelAnimationFrame(spriteThrowRaf);
+		spriteThrowRaf = 0;
+	}
+	if (spriteThrowTimer) {
+		clearTimeout(spriteThrowTimer);
+		spriteThrowTimer = 0;
+	}
+	if (spriteDoneTimer) {
+		clearTimeout(spriteDoneTimer);
+		spriteDoneTimer = 0;
+	}
+}
+
+function currentSpriteMode() {
+	if (!spriteVisible || !spriteReady) return "idle";
+	if (activeThrow) return "throw";
+	if (Date.now() < spriteDoneUntil) return "done";
+	if (spriteHovered && !spriteDragging) return "hover";
+	if (spriteWaiting) return "waiting";
+	return "idle";
+}
+
+function scheduleSpriteLoop(mode, index = 0) {
+	clearSpriteTimers();
+	spriteCurrentMode = mode;
+	const frames = spriteFrames(mode);
+	if (!frames.length) return;
+	if (spriteReducedMotion) {
+		const staticFrame = mode === "throw" ? frames[frames.length - 1] : frames[0];
+		setSpriteFrame(staticFrame);
+		return;
+	}
+	const frameMs = spriteFrameMs(mode);
+	spriteLoopIndex = Math.max(0, Math.min(index, frames.length - 1));
+	const tick = () => {
+		if (currentSpriteMode() !== mode) return;
+		const nextFrame = frames[Math.min(spriteLoopIndex, frames.length - 1)];
+		setSpriteFrame(nextFrame);
+		spriteLoopIndex = (spriteLoopIndex + 1) % frames.length;
+		spriteLoopTimer = setTimeout(tick, frameMs);
+	};
+	tick();
+}
+
+function finishThrow() {
+	const key = activeThrow && activeThrow.key;
+	activeThrow = null;
+	if (key) {
+		queuedThrowKeys.delete(key);
+	}
+	spriteDoneUntil = Date.now() + 520;
+	scheduleSpriteLoop("done");
+	spriteDoneTimer = setTimeout(() => {
+		spriteDoneTimer = 0;
+		spriteDoneUntil = 0;
+		updateSpriteState();
+		pumpThrowQueue();
+	}, 520);
+}
+
+function spawnPlaneForThrow(throwMeta) {
+	if (!window.naiBridge || typeof window.naiBridge.spawnPlane !== "function") return;
+	window.naiBridge.spawnPlane({
+		conversationId: throwMeta.conversationId || "",
+		tabId: throwMeta.tabId || "",
+		title: throwMeta.title || "",
+		releaseFrame: Number.isFinite(spriteMap && spriteMap.releaseFrame) ? spriteMap.releaseFrame : 5,
+	});
+}
+
+function startThrow(throwMeta) {
+	if (!throwMeta || !spriteReady || !spriteVisible) return;
+	activeThrow = Object.assign({ spawned: false }, throwMeta);
+	if (spriteReducedMotion) {
+		setSpriteFrame(spriteFrames("throw").slice(-1)[0] || frameRel(SPRITE_FALLBACKS.throw));
+		spawnPlaneForThrow(activeThrow);
+		finishThrow();
+		return;
+	}
+	const frames = spriteFrames("throw");
+	if (!frames.length) return;
+	spriteCurrentMode = "throw";
+	clearSpriteTimers();
+	const total = Math.max(1, frames.length);
+	const frameMs = spriteFrameMs("throw");
+	const duration = frameMs * total;
+	const startedAt = performance.now();
+	const releaseFrame = Number.isFinite(spriteMap && spriteMap.releaseFrame) ? Number(spriteMap.releaseFrame) : 5;
+	const tick = (now) => {
+		if (activeThrow !== throwMeta && (!activeThrow || activeThrow.key !== throwMeta.key)) return;
+		const elapsed = now - startedAt;
+		const progress = Math.min(1, elapsed / duration);
+		const index = Math.min(frames.length - 1, Math.floor(progress * frames.length));
+		spriteLoopIndex = index;
+		setSpriteFrame(frames[index]);
+		if (!throwMeta.spawned && index >= releaseFrame) {
+			throwMeta.spawned = true;
+			spawnPlaneForThrow(throwMeta);
+		}
+		if (progress >= 1) {
+			finishThrow();
+			return;
+		}
+		spriteThrowRaf = requestAnimationFrame(tick);
+	};
+	spriteThrowRaf = requestAnimationFrame(tick);
+}
+
+function pumpThrowQueue() {
+	if (activeThrow || !throwQueue.length || !spriteReady || !spriteVisible) {
+		updateSpriteState();
+		return;
+	}
+	const next = throwQueue.shift();
+	if (next) startThrow(next);
+	else updateSpriteState();
+}
+
+function queueThrow(throwMeta) {
+	if (!spriteVisible) return;
+	if (!throwMeta || !throwMeta.key || queuedThrowKeys.has(throwMeta.key)) return;
+	if (activeThrow && activeThrow.key === throwMeta.key) return;
+	if (throwQueue.length >= 3) return;
+	queuedThrowKeys.add(throwMeta.key);
+	throwQueue.push(throwMeta);
+	pumpThrowQueue();
+}
+
+function updateSpriteState(force = false) {
+	if (!spriteReady || !spriteVisible) return;
+	const nextMode = currentSpriteMode();
+	if (!force && nextMode === spriteCurrentMode && (nextMode === "throw" || spriteLoopTimer)) {
+		return;
+	}
+	if (nextMode === "done") {
+		scheduleSpriteLoop("done");
+		return;
+	}
+	if (nextMode === "throw") {
+		return;
+	}
+	if (nextMode === "hover") {
+		scheduleSpriteLoop("hover");
+		return;
+	}
+	if (nextMode === "waiting") {
+		scheduleSpriteLoop("waiting");
+		return;
+	}
+	scheduleSpriteLoop("idle");
+}
+
+function syncSnapshotTransitions(list) {
+	const nextStates = new Map();
+	let waiting = false;
+	for (const c of list || []) {
+		if (!c) continue;
+		const key = c.conversationId || String(c.tabId || "");
+		nextStates.set(key, c.state);
+		if (isRunning(c.state)) waiting = true;
+		if (spriteInitialized) {
+			const prev = spritePrevStates.get(key);
+			if (prev !== "done" && c.state === "done") {
+				queueThrow({
+					key,
+					conversationId: c.conversationId || "",
+					tabId: c.tabId || "",
+					title: c.title || "",
+				});
+			}
+		}
+	}
+	spriteWaiting = waiting;
+	spritePrevStates = nextStates;
+	spriteInitialized = true;
+	updateSpriteState();
+}
+
+function setSpriteVisible(visible) {
+	spriteVisible = Boolean(visible);
+	if (!spriteVisible) {
+		clearSpriteTimers();
+		activeThrow = null;
+		spriteDoneUntil = 0;
+		throwQueue.length = 0;
+		queuedThrowKeys.clear();
+		setSpriteFrame((spriteFrames("idle")[0]) || frameRel(SPRITE_FALLBACKS.idle));
+		return;
+	}
+	pumpThrowQueue();
+	updateSpriteState(true);
 }
 
 function isRunning(state) {
@@ -179,11 +409,22 @@ petEl.addEventListener("mousedown", (e) => {
 	e.preventDefault();
 });
 
+petEl.addEventListener("mouseenter", () => {
+	spriteHovered = true;
+	updateSpriteState();
+});
+
+petEl.addEventListener("mouseleave", () => {
+	spriteHovered = false;
+	updateSpriteState();
+});
+
 window.addEventListener("mousemove", (e) => {
 	if (!drag) return;
 	if (totalDragDistance(e) >= DRAG_THRESHOLD_PX) {
 		drag.moved = true;
 		drag.movingWindow = true;
+		spriteDragging = true;
 		petEl.classList.add("is-dragging");
 		window.naiBridge.move({ screenX: e.screenX, screenY: e.screenY });
 	}
@@ -194,6 +435,7 @@ window.addEventListener("mouseup", (e) => {
 	const wasClick = totalDragDistance(e) < DRAG_THRESHOLD_PX;
 	const movedWindow = drag.movingWindow;
 	drag = null;
+	spriteDragging = false;
 	petEl.classList.remove("is-dragging");
 	window.naiBridge.dragEnd();
 	if (wasClick && !movedWindow) onPetClick();
@@ -217,7 +459,19 @@ badgeEl.addEventListener("click", () => {
 window.naiBridge.onSnapshot((data) => {
 	snapshot = Array.isArray(data) ? data : [];
 	render();
+	syncSnapshotTransitions(snapshot);
+	updateWindowSize();
 });
 
-renderPetSvg();
+window.naiBridge.onVisibility((data) => {
+	setSpriteVisible(Boolean(data && data.visible));
+});
+
+spriteMap = loadSpriteMap();
+spriteReady = Boolean(spriteMap && spriteMap.states);
+if (spriteReady) {
+	setSpriteFrame(spriteFrames("idle")[0] || frameRel(SPRITE_FALLBACKS.idle));
+	pumpThrowQueue();
+	updateSpriteState(true);
+}
 render();
