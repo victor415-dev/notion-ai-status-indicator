@@ -45,7 +45,7 @@ html, body {
 .pet-icon {
 	width: 56px;
 	height: 56px;
-	border-radius: 999px;
+	background: transparent;
 	display: block;
 	object-fit: contain;
 	pointer-events: none;

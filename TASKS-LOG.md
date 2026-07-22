@@ -317,3 +317,31 @@
 	- `npm start` in `desktop/` still aborts with `SIGABRT` in this sandbox before any app log appears, so full GUI smoke testing remains limited by the environment here.
 - Remaining:
 	- Final commit SHA and push result still pending.
+
+## T-013b
+- Date: 2026-07-22 (Asia/Shanghai)
+- Commit:
+	- this commit — key out white sprite backgrounds
+- Actual root cause:
+	- Confirmed: all extracted `desktop/renderer/assets/pet/frames/*.png` files retained the opaque near-white contact-sheet background. Because the Electron pet window is transparent, that background appeared as a white block. `.pet-icon` also applied `border-radius: 999px`, turning the block into a more prominent white circle.
+- Changes:
+	- desktop/scripts/rekey-pet-frames.py: Added repeatable Pillow-based frame rekeying. It samples all four corners, identifies near-white pixels (all RGB channels >=245) or pixels within RGB delta 12 of the sampled corner background, and flood-fills only the edge-connected matching region before clearing it to transparent. This preserves isolated pale suit fills and helmet highlights. The script verifies each input remains 192x192 and processes pet and plane frames alike.
+	- desktop/renderer/assets/pet/frames/*.png: Rekeyed all 36 frames to transparent backgrounds. `sprite-map.json` remains unchanged with `releaseFrame: 5`.
+	- desktop/renderer/styles.css: Removed the image-level circular crop and explicitly keeps the sprite image background transparent with `object-fit: contain` unchanged.
+	- desktop/renderer/renderer.js: Added `[NAI-PET] sprite frame failed` image-load logging and `[NAI-PET] sprite map missing` startup logging only; sprite behavior is unchanged.
+- Transparency verification (`alpha=0` ratio):
+	- done_00 72.17%, done_01 71.25%, done_02 71.26%, done_03 71.26%
+	- hover_00 71.17%, hover_01 70.91%, hover_02 70.12%, hover_03 70.32%
+	- idle_00 68.48%, idle_01 68.52%, idle_02 68.52%, idle_03 68.39%, idle_04 68.48%, idle_05 68.36%
+	- plane_00 90.46%, plane_01 90.65%, plane_02 90.69%, plane_03 91.00%, plane_04 90.86%, plane_05 89.07%
+	- plane_land_00 89.32%, plane_land_01 91.98%
+	- throw_00 69.38%, throw_01 69.31%, throw_02 67.64%, throw_03 67.64%, throw_04 68.27%, throw_05 70.36%, throw_06 73.40%, throw_07 73.40%
+	- wait_00 69.14%, wait_01 69.29%, wait_02 69.15%, wait_03 69.28%, wait_04 68.92%, wait_05 68.72%
+- Self test:
+	- All 36 frames passed the required alpha-zero assertion (>5%); minimum observed ratio was 67.64%.
+	- Visual QA composited `idle_00`, `throw_04`, and `plane_00` on a dark background: astronaut cat and paper plane silhouettes remained visible with no white rectangular or circular background.
+	- `node --check desktop/renderer/renderer.js`, `python -m py_compile desktop/scripts/rekey-pet-frames.py`, and `git diff --check` passed.
+	- Card/collapse/drag regression assertions passed: the 4px drag threshold, pet click path, collapse/badge handlers, and collapse hidden CSS rule remain present.
+	- `cd desktop && npm start` launched Electron through `electron .` without an application startup error.
+- Remaining:
+	- Manual whole-machine acceptance remains for the user: confirm the live pet is visible on the desktop rather than a white block, then exercise idle, waiting, throw, and plane interactions.

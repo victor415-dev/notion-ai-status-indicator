@@ -467,11 +467,17 @@ window.naiBridge.onVisibility((data) => {
 	setSpriteVisible(Boolean(data && data.visible));
 });
 
+if (petSpriteEl) {
+	petSpriteEl.onerror = () => console.warn("[NAI-PET] sprite frame failed", petSpriteEl.currentSrc || petSpriteEl.src);
+}
+
 spriteMap = loadSpriteMap();
 spriteReady = Boolean(spriteMap && spriteMap.states);
 if (spriteReady) {
 	setSpriteFrame(spriteFrames("idle")[0] || frameRel(SPRITE_FALLBACKS.idle));
 	pumpThrowQueue();
 	updateSpriteState(true);
+} else {
+	console.warn("[NAI-PET] sprite map missing");
 }
 render();
