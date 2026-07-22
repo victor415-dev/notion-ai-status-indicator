@@ -42,6 +42,9 @@ let spriteDoneUntil = 0;
 let activeThrow = null; // { key, conversationId, tabId, title, spawned }
 const throwQueue = [];
 const queuedThrowKeys = new Set();
+const spriteFrameDataUrls = new Map();
+const spriteFrameLoads = new Map();
+let spriteFrameRequest = 0;
 
 function loadSpriteMap() {
 	try {
@@ -68,10 +71,114 @@ function spriteFrameMs(mode) {
 	return { idle: 140, hover: 120, waiting: 140, done: 120, throw: 80, plane: 90, planeLand: 110 }[mode] || 120;
 }
 
+function sampledBackground(data, width, height) {
+	const corners = [0, width - 1, (height - 1) * width, width * height - 1];
+	return [0, 1, 2].map((channel) => {
+		const values = corners.map((pixel) => data[pixel * 4 + channel]).sort((a, b) => a - b);
+		return values[Math.floor(values.length / 2)];
+	});
+}
+
+function keySpriteBackground(canvas, context) {
+	const { width, height } = canvas;
+	const imageData = context.getImageData(0, 0, width, height);
+	const { data } = imageData;
+	const background = sampledBackground(data, width, height);
+	const queued = new Uint8Array(width * height);
+	const queue = [];
+
+	const isKeyColor = (pixel) => {
+		const offset = pixel * 4;
+		const red = data[offset];
+		const green = data[offset + 1];
+		const blue = data[offset + 2];
+		const alpha = data[offset + 3];
+		if (alpha === 0) return true;
+		const nearWhite = red >= 240 && green >= 240 && blue >= 240;
+		const nearCorner = Math.max(
+			Math.abs(red - background[0]),
+			Math.abs(green - background[1]),
+			Math.abs(blue - background[2]),
+		) <= 18;
+		return nearWhite || nearCorner;
+	};
+
+	const enqueue = (pixel) => {
+		if (pixel < 0 || pixel >= width * height || queued[pixel] || !isKeyColor(pixel)) return;
+		queued[pixel] = 1;
+		queue.push(pixel);
+	};
+
+	for (let x = 0; x < width; x += 1) {
+		enqueue(x);
+		enqueue((height - 1) * width + x);
+	}
+	for (let y = 1; y < height - 1; y += 1) {
+		enqueue(y * width);
+		enqueue(y * width + width - 1);
+	}
+
+	for (let head = 0; head < queue.length; head += 1) {
+		const pixel = queue[head];
+		const x = pixel % width;
+		const y = Math.floor(pixel / width);
+		if (x > 0) enqueue(pixel - 1);
+		if (x < width - 1) enqueue(pixel + 1);
+		if (y > 0) enqueue(pixel - width);
+		if (y < height - 1) enqueue(pixel + width);
+	}
+
+	for (let pixel = 0; pixel < queued.length; pixel += 1) {
+		if (!queued[pixel]) continue;
+		const offset = pixel * 4;
+		data[offset] = 0;
+		data[offset + 1] = 0;
+		data[offset + 2] = 0;
+		data[offset + 3] = 0;
+	}
+	context.putImageData(imageData, 0, 0);
+}
+
+function loadKeyedSprite(relPath) {
+	if (spriteFrameDataUrls.has(relPath)) return Promise.resolve(spriteFrameDataUrls.get(relPath));
+	if (spriteFrameLoads.has(relPath)) return spriteFrameLoads.get(relPath);
+
+	const source = `./${relPath}`;
+	const load = new Promise((resolve, reject) => {
+		const image = new Image();
+		image.onload = () => {
+			try {
+				const canvas = document.createElement("canvas");
+				canvas.width = image.naturalWidth || 192;
+				canvas.height = image.naturalHeight || 192;
+				const context = canvas.getContext("2d", { willReadFrequently: true });
+				if (!context) throw new Error("2d canvas unavailable");
+				context.drawImage(image, 0, 0, canvas.width, canvas.height);
+				keySpriteBackground(canvas, context);
+				const dataUrl = canvas.toDataURL("image/png");
+				spriteFrameDataUrls.set(relPath, dataUrl);
+				resolve(dataUrl);
+			} catch (error) {
+				reject(error);
+			}
+		};
+		image.onerror = () => reject(new Error("image load failed"));
+		image.src = source;
+	});
+
+	spriteFrameLoads.set(relPath, load);
+	return load.finally(() => spriteFrameLoads.delete(relPath));
+}
+
 function setSpriteFrame(relPath) {
 	if (!petSpriteEl || !relPath) return;
-	const next = `./${relPath}`;
-	if (petSpriteEl.getAttribute("src") !== next) petSpriteEl.setAttribute("src", next);
+	const request = ++spriteFrameRequest;
+	loadKeyedSprite(relPath)
+		.then((dataUrl) => {
+			if (request !== spriteFrameRequest || petSpriteEl.getAttribute("src") === dataUrl) return;
+			petSpriteEl.setAttribute("src", dataUrl);
+		})
+		.catch(() => console.warn("[NAI-PET] sprite frame failed", `./${relPath}`));
 }
 
 function clearSpriteTimers() {

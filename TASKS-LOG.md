@@ -345,3 +345,20 @@
 	- `cd desktop && npm start` launched Electron through `electron .` without an application startup error.
 - Remaining:
 	- Manual whole-machine acceptance remains for the user: confirm the live pet is visible on the desktop rather than a white block, then exercise idle, waiting, throw, and plane interactions.
+
+## T-013c
+- Date: 2026-07-22 (Asia/Shanghai)
+- Commit:
+	- this commit — runtime chroma-key pet sprites
+- Actual root cause:
+	- T-013b only changed the extracted frame files. The renderer still assigned frame PNGs directly to the image element, so any remaining opaque near-white source pixels could appear as a white block in the transparent Electron window. The `.pet` wrapper also still applied a circular clip, and the pale astronaut cat had no contrast treatment on a light desktop background.
+- Changes:
+	- desktop/renderer/renderer.js: `setSpriteFrame` now loads each PNG into an offscreen canvas, samples all four corners, and flood-fills only edge-connected key-color pixels before assigning `canvas.toDataURL("image/png")` to `#pet-sprite`. The runtime key accepts RGB >=240 or max channel distance <=18 from the sampled corner color. It clears RGBA only after edge-connected traversal, so isolated light helmet/suit details are preserved. Processed data URLs and concurrent loads are cached by frame path; a request sequence prevents a late frame load from replacing the current animation frame. Existing state, throw, queue, and failure/map-missing logs remain unchanged.
+	- desktop/renderer/styles.css: Removed the remaining `.pet` `border-radius: 999px` and added `drop-shadow(0 1px 2px rgba(0, 0, 0, .35))` to `.pet-icon`. Transparent background and `object-fit: contain` remain unchanged.
+- Self test:
+	- `node --check desktop/renderer/renderer.js` and `git diff --check` passed.
+	- Runtime flood-fill simulation passed: edge-connected white became transparent, while a light pixel isolated inside a dark sprite outline remained opaque.
+	- Cache/implementation assertions passed: `Image` loading, data-URL conversion, per-path caches, thresholds 240/18, existing failure log, no `.pet` circular clip, and the required outline shadow are all present.
+	- `npm start` could not run in this environment: the desktop execution approval service rejected the GUI launch with HTTP 403 before Electron started. No workaround was attempted.
+- Remaining:
+	- Manual whole-machine acceptance is required: launch the desktop companion and verify idle/drag/card behavior while confirming the astronaut cat is visible without a white rectangular or circular background.
