@@ -362,3 +362,24 @@
 	- `npm start` could not run in this environment: the desktop execution approval service rejected the GUI launch with HTTP 403 before Electron started. No workaround was attempted.
 - Remaining:
 	- Manual whole-machine acceptance is required: launch the desktop companion and verify idle/drag/card behavior while confirming the astronaut cat is visible without a white rectangular or circular background.
+
+## T-013d
+- Date: 2026-07-22 (Asia/Shanghai)
+- Commit:
+	- this commit — outline white cat silhouette
+- Actual root cause:
+	- Confirmed from the already-keyed frames: a large white/near-white astronaut-cat silhouette remains after background transparency. At 56px, the previous single weak shadow does not reliably distinguish the silhouette on a light desktop. This is a contrast/readability issue, not a further background-key threshold issue.
+- Changes:
+	- desktop/renderer/renderer.js: Retained the T-013c edge-connected runtime keying and added `outlineSprite` immediately afterward. Pixels with alpha >16 are the immutable sprite entity. Only transparent pixels within a two-pixel 8-neighborhood of that entity receive `rgba(20,24,32,.92)` (RGBA `20,24,32,235`); light helmet and suit pixels inside the entity are not chroma-keyed or overwritten. The existing data-URL cache remains in use. Added `[NAI-PET] sprite keyed` logging with frame path, source opaque count, and generated outline count.
+	- desktop/renderer/styles.css: Replaced the weak single shadow with the locked three-layer dark drop-shadow stack. `.pet` and `.pet-icon` remain uncropped; transparent background and `object-fit: contain` remain unchanged.
+- QA:
+	- Generated the required processed `idle_00` composites: `/tmp/t013d-qa-dark.png` (`#1a1a1a`), `/tmp/t013d-qa-light.png` (`#f0f0f0`), and `/tmp/t013d-qa-blue.png` (`#2f6fed`).
+	- Runtime-equivalent outline pass measured `opaque=11592` and `outlinePx=1443` for `idle_00`.
+	- Visual inspection of all three QA images confirmed a continuous dark silhouette edge around the astronaut cat; on the light background the head, helmet, and orange suit details remain distinguishable instead of reading as an unbounded white block.
+- Self test:
+	- `node --check desktop/renderer/renderer.js` and `git diff --check` passed.
+	- In-memory flood-fill/outline test passed: edge-connected white was keyed, isolated internal white remained opaque, the two-pixel outline was generated with the locked dark RGBA color, and the outline did not overwrite interior pixels.
+	- Static assertions passed for cache retention, `[NAI-PET] sprite keyed` counts, no pet circular clip, and the required three-layer shadow filter.
+	- `npm start` could not run: the desktop execution approval service rejected GUI launch with HTTP 403 before Electron started. No workaround was attempted.
+- Remaining:
+	- Manual whole-machine acceptance remains for idle animation, dragging, and cards because the local GUI launch is blocked by environment approval.

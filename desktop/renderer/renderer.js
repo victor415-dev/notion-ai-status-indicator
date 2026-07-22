@@ -139,6 +139,51 @@ function keySpriteBackground(canvas, context) {
 	context.putImageData(imageData, 0, 0);
 }
 
+function outlineSprite(canvas, context) {
+	const { width, height } = canvas;
+	const imageData = context.getImageData(0, 0, width, height);
+	const { data } = imageData;
+	const entity = new Uint8Array(width * height);
+	let opaquePixels = 0;
+	let outlinePixels = 0;
+
+	for (let pixel = 0; pixel < entity.length; pixel += 1) {
+		if (data[pixel * 4 + 3] <= 16) continue;
+		entity[pixel] = 1;
+		opaquePixels += 1;
+	}
+
+	for (let y = 0; y < height; y += 1) {
+		for (let x = 0; x < width; x += 1) {
+			const pixel = y * width + x;
+			if (entity[pixel]) continue;
+			let touchesEntity = false;
+			for (let offsetY = -2; offsetY <= 2 && !touchesEntity; offsetY += 1) {
+				for (let offsetX = -2; offsetX <= 2; offsetX += 1) {
+					if (offsetX === 0 && offsetY === 0) continue;
+					const neighborX = x + offsetX;
+					const neighborY = y + offsetY;
+					if (neighborX < 0 || neighborX >= width || neighborY < 0 || neighborY >= height) continue;
+					if (entity[neighborY * width + neighborX]) {
+						touchesEntity = true;
+						break;
+					}
+				}
+			}
+			if (!touchesEntity) continue;
+			const pixelOffset = pixel * 4;
+			data[pixelOffset] = 20;
+			data[pixelOffset + 1] = 24;
+			data[pixelOffset + 2] = 32;
+			data[pixelOffset + 3] = 235;
+			outlinePixels += 1;
+		}
+	}
+
+	context.putImageData(imageData, 0, 0);
+	return { opaquePixels, outlinePixels };
+}
+
 function loadKeyedSprite(relPath) {
 	if (spriteFrameDataUrls.has(relPath)) return Promise.resolve(spriteFrameDataUrls.get(relPath));
 	if (spriteFrameLoads.has(relPath)) return spriteFrameLoads.get(relPath);
@@ -155,6 +200,8 @@ function loadKeyedSprite(relPath) {
 				if (!context) throw new Error("2d canvas unavailable");
 				context.drawImage(image, 0, 0, canvas.width, canvas.height);
 				keySpriteBackground(canvas, context);
+				const { opaquePixels, outlinePixels } = outlineSprite(canvas, context);
+				console.info("[NAI-PET] sprite keyed", relPath, `opaque=${opaquePixels}`, `outlinePx=${outlinePixels}`);
 				const dataUrl = canvas.toDataURL("image/png");
 				spriteFrameDataUrls.set(relPath, dataUrl);
 				resolve(dataUrl);
