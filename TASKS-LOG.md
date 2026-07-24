@@ -521,3 +521,18 @@
 	- Existing Electron development CSP warning is unrelated.
 - Remaining:
 	- Manual 30-second whole-machine acceptance is required with a real active conversation and frequent reply updates, verifying no black title-line/fragment flashes above the pet.
+
+## T-016d
+- Date: 2026-07-24 (Asia/Shanghai)
+- Commit:
+	- this commit — strip sticker plate ring from frames
+- Required A-step evidence and conclusion:
+	- PIL inspection of `desktop/renderer/assets/pet/frames/idle_00.png` found corner alpha `[0, 0, 0, 0]`. The horizontal middle scan (`y=96`) is transparent `x=0..57`, opaque `x=58..156`, transparent `x=157..191`; the vertical middle scan (`x=96`) is transparent `y=0..55`, opaque `y=56..183`, transparent `y=184..191`.
+	- From each edge midpoint inward, the first two opaque RGBA samples are: top `(96,56)=(126,129,136,255)`, then `(96,57)=(26,30,41,255)`; bottom `(96,183)=(188,186,197,255)`, then `(96,182)=(176,175,183,255)`; left `(58,96)=(196,197,199,255)`, then `(59,96)=(7,11,14,255)`; right `(156,96)=(202,191,185,255)`, then `(155,96)=(48,28,19,255)`.
+	- These samples are cat silhouette features (ear/headset/helmet/tail edge), not a separate rounded backing-ring color. Treating either sampled color as a plate key would erase real cat pixels. Therefore the locked backing-ring hypothesis is refuted by current frame data.
+- Actual visual verification:
+	- Started the current Electron source with a real incoming `responding` snapshot and captured `/tmp/t016d-desktop.png`. The rendered pet visibly contains only the cat silhouette and dark outline; no white rectangular or rounded plate is present. The card above it and waiting animation rendered normally.
+- Changes:
+	- No frame, runtime-key, CSS, or extension behavior was changed. T-016c's all-frame transparency and T-016b's no-shadow surface remain the correct implementation for the inspected current assets. This record-only commit avoids destructively keying cat-edge colors based on a disproven premise.
+- Remaining:
+	- If a white plate is still observed on another machine, capture the running commit SHA and screenshot from that machine; the current checked-out and rendered `main` asset path does not reproduce it.
