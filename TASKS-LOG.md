@@ -571,3 +571,21 @@
 	- This T-019 cycle therefore has no new post-reinstall cat-background observation. The prior T-016d real Electron screenshot on current source showed only the cat silhouette and outline, with no white plate.
 - Remaining:
 	- The user must run `cd desktop && npm start` on the local macOS session after confirming the system no longer removes `node_modules/electron/dist/Electron.app`. If it is removed again, investigate the host security/cleanup policy; the repository and npm installation are intact before execution.
+
+## T-018c
+- Date: 2026-07-27 (Asia/Shanghai)
+- Commit:
+	- this commit — remove baked-in glyph artifacts from pet frames
+- Frame evidence:
+	- A 4-connected alpha-component scan over all 36 192x192 frames found the expected floating fragments only above the cat body. `done_01` had area `3` at `(64,35)-(66,35)`; `done_02` and `done_03` each had area `3` at `(66,35)-(68,35)`. `wait_00` had multiple top fragments in the `y=35..36` band, initially including areas `6` at `(140,35)-(144,36)`, `5` at `(45,35)-(49,35)`, `3` at `(108,35)-(110,35)`, `3` at `(91,35)-(93,35)`, and smaller one/two-pixel components. Its largest cat component starts at `y=37`; the isolated fragments match the reported one-frame text/glyph flash topology.
+	- The first implementation pass used 8-neighbor connectivity, which falsely diagonal-joined `wait_00` fragments to the cat. The final offline and runtime implementations use 4-neighbor connectivity, matching the actual alpha topology. Final `wait_00` cleanup removed 12 disconnected top fragments (areas 1-9px); all 36 frames pass the post-strip assertion that no sub-400px, sub-20px component exists above the largest body component.
+- Changes:
+	- desktop/scripts/rekey-pet-frames.py: Added deterministic alpha-component discovery and stripping. It preserves the largest body component, clears only small disconnected components above it, reports frame/body/stripped component metadata, and fails if a qualifying speck remains.
+	- desktop/renderer/assets/pet/frames/done_01.png, `done_02.png`, `done_03.png`, and `wait_00.png`: Removed the identified baked-in glyph pixels; no cat-body or outline pixels were targeted.
+	- desktop/renderer/renderer.js: Added `stripFloatingSpecks(canvas, context)` before the existing background key and outline stages. The same 4-connected component rule cleans future source-frame glyph remnants and logs `[NAI-PET] stripped N specks` when it acts.
+- QA and self test:
+	- Generated and visually inspected `/tmp/t018c-dark.png` and `/tmp/t018c-light.png` from cleaned `wait_00`; both show the cat silhouette without any glyphs above its head.
+	- `python3 desktop/scripts/rekey-pet-frames.py` completed for all 36 frames. Post-strip component assertions and body-preservation checks passed for all frames.
+	- `node --check desktop/renderer/renderer.js` and `git diff --check` passed. The known T-019 host policy can remove Electron on launch, so no GUI start was retried during this frame-only verification.
+- Remaining:
+	- Manual whole-machine verification: keep a conversation running for 60 seconds and confirm the idle/waiting loop never renders text above the cat while card, throw, and click-through behavior remain normal.

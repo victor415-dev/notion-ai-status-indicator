@@ -16,6 +16,8 @@ from PIL import Image
 
 WHITE_THRESHOLD = 235
 BACKGROUND_DELTA = 20
+FLOATING_SPECK_MAX_AREA = 400
+FLOATING_SPECK_MAX_HEIGHT = 20
 
 
 def median(values: list[int]) -> int:
@@ -43,7 +45,48 @@ def is_background(pixel: tuple[int, int, int, int], background: tuple[int, int, 
     return near_white or near_corner
 
 
-def rekey(path: Path) -> float:
+def opaque_components(image: Image.Image) -> list[tuple[list[tuple[int, int]], tuple[int, int, int, int]]]:
+    width, height = image.size
+    pixels = image.load()
+    seen: set[tuple[int, int]] = set()
+    components: list[tuple[list[tuple[int, int]], tuple[int, int, int, int]]] = []
+    for y in range(height):
+        for x in range(width):
+            if (x, y) in seen or pixels[x, y][3] == 0:
+                continue
+            queue: deque[tuple[int, int]] = deque([(x, y)])
+            seen.add((x, y))
+            points: list[tuple[int, int]] = []
+            while queue:
+                point_x, point_y = queue.popleft()
+                points.append((point_x, point_y))
+                for next_x, next_y in ((point_x - 1, point_y), (point_x + 1, point_y), (point_x, point_y - 1), (point_x, point_y + 1)):
+                    if not (0 <= next_x < width and 0 <= next_y < height):
+                        continue
+                    if (next_x, next_y) in seen or pixels[next_x, next_y][3] == 0:
+                        continue
+                    seen.add((next_x, next_y))
+                    queue.append((next_x, next_y))
+            xs, ys = zip(*points)
+            components.append((points, (min(xs), min(ys), max(xs), max(ys))))
+    return sorted(components, key=lambda component: len(component[0]), reverse=True)
+
+
+def floating_specks(image: Image.Image) -> tuple[tuple[int, int, int, int], list[tuple[list[tuple[int, int]], tuple[int, int, int, int]]]]:
+    components = opaque_components(image)
+    if not components:
+        return (0, 0, 0, 0), []
+    body_box = components[0][1]
+    specks = []
+    for points, box in components[1:]:
+        _, top, _, bottom = box
+        height = bottom - top + 1
+        if top < body_box[1] and len(points) < FLOATING_SPECK_MAX_AREA and height < FLOATING_SPECK_MAX_HEIGHT:
+            specks.append((points, box))
+    return body_box, specks
+
+
+def rekey(path: Path) -> tuple[float, tuple[int, int, int, int], list[tuple[int, tuple[int, int, int, int]]]]:
     image = Image.open(path).convert("RGBA")
     width, height = image.size
     if (width, height) != (192, 192):
@@ -75,8 +118,20 @@ def rekey(path: Path) -> float:
     for x, y in queued:
         pixels[x, y] = (0, 0, 0, 0)
 
+    body_box, specks = floating_specks(image)
+    stripped = [(len(points), box) for points, box in specks]
+    for points, _ in specks:
+        for x, y in points:
+            pixels[x, y] = (0, 0, 0, 0)
+
+    body_box_after, specks_after = floating_specks(image)
+    if specks_after:
+        raise ValueError(f"{path} retains floating specks: {[(len(points), box) for points, box in specks_after]}")
+    if body_box != (0, 0, 0, 0) and body_box_after == (0, 0, 0, 0):
+        raise ValueError(f"{path} lost its opaque body")
+
     image.save(path)
-    return len(queued) / (width * height)
+    return len(queued) / (width * height), body_box_after, stripped
 
 
 def main() -> None:
@@ -91,8 +146,8 @@ def main() -> None:
     if not paths:
         raise SystemExit(f"No PNG frames found in {args.frames_dir}")
     for path in paths:
-        ratio = rekey(path)
-        print(f"{path.name}\talpha0={ratio:.2%}")
+        ratio, body_box, stripped = rekey(path)
+        print(f"{path.name}\talpha0={ratio:.2%}\tbody={body_box}\tstripped={stripped}")
 
 
 if __name__ == "__main__":

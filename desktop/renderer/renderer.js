@@ -13,6 +13,8 @@ const LAYOUT_MARGIN = 8;
 const HIT_ALPHA_THRESHOLD = 16;
 const SPRITE_WHITE_THRESHOLD = 235;
 const SPRITE_BACKGROUND_DELTA = 20;
+const FLOATING_SPECK_MAX_AREA = 400;
+const FLOATING_SPECK_MAX_HEIGHT = 20;
 
 const RANK = { thinking: 0, responding: 0, done: 1, idle: 2 };
 
@@ -95,6 +97,64 @@ function sampledBackground(data, width, height) {
 		const values = corners.map((pixel) => data[pixel * 4 + channel]).sort((a, b) => a - b);
 		return values[Math.floor(values.length / 2)];
 	});
+}
+
+function opaqueComponents(data, width, height) {
+	const seen = new Uint8Array(width * height);
+	const components = [];
+	for (let y = 0; y < height; y += 1) {
+		for (let x = 0; x < width; x += 1) {
+			const start = y * width + x;
+			if (seen[start] || data[start * 4 + 3] === 0) continue;
+			const queue = [start];
+			const pixels = [];
+			seen[start] = 1;
+			let left = x;
+			let top = y;
+			let right = x;
+			let bottom = y;
+			for (let head = 0; head < queue.length; head += 1) {
+				const pixel = queue[head];
+				const pointX = pixel % width;
+				const pointY = Math.floor(pixel / width);
+				pixels.push(pixel);
+				left = Math.min(left, pointX);
+				top = Math.min(top, pointY);
+				right = Math.max(right, pointX);
+				bottom = Math.max(bottom, pointY);
+				for (const [offsetX, offsetY] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+					const nextX = pointX + offsetX;
+					const nextY = pointY + offsetY;
+					if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) continue;
+					const next = nextY * width + nextX;
+					if (seen[next] || data[next * 4 + 3] === 0) continue;
+					seen[next] = 1;
+					queue.push(next);
+				}
+			}
+			components.push({ pixels, left, top, right, bottom });
+		}
+	}
+	return components.sort((a, b) => b.pixels.length - a.pixels.length);
+}
+
+function stripFloatingSpecks(canvas, context) {
+	const { width, height } = canvas;
+	const imageData = context.getImageData(0, 0, width, height);
+	const { data } = imageData;
+	const components = opaqueComponents(data, width, height);
+	if (!components.length) return 0;
+	const body = components[0];
+	const specks = components.slice(1).filter((component) => (
+		component.top < body.top
+		&& component.pixels.length < FLOATING_SPECK_MAX_AREA
+		&& component.bottom - component.top + 1 < FLOATING_SPECK_MAX_HEIGHT
+	));
+	for (const speck of specks) {
+		for (const pixel of speck.pixels) data[pixel * 4 + 3] = 0;
+	}
+	if (specks.length) context.putImageData(imageData, 0, 0);
+	return specks.length;
 }
 
 function keySpriteBackground(canvas, context, whiteThreshold = SPRITE_WHITE_THRESHOLD, backgroundDelta = SPRITE_BACKGROUND_DELTA) {
@@ -240,6 +300,8 @@ function loadKeyedSprite(relPath) {
 				const context = canvas.getContext("2d", { willReadFrequently: true });
 				if (!context) throw new Error("2d canvas unavailable");
 				context.drawImage(image, 0, 0, canvas.width, canvas.height);
+				const strippedSpecks = stripFloatingSpecks(canvas, context);
+				if (strippedSpecks) console.info("[NAI-PET] stripped", strippedSpecks, "specks", relPath);
 				keySpriteBackground(canvas, context);
 				if (hasOpaqueSpriteCorner(canvas, context)) {
 					console.warn("[NAI-PET] sprite plate residual", relPath);
