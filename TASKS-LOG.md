@@ -589,3 +589,18 @@
 	- `node --check desktop/renderer/renderer.js` and `git diff --check` passed. The known T-019 host policy can remove Electron on launch, so no GUI start was retried during this frame-only verification.
 - Remaining:
 	- Manual whole-machine verification: keep a conversation running for 60 seconds and confirm the idle/waiting loop never renders text above the cat while card, throw, and click-through behavior remain normal.
+
+## T-021
+- Date: 2026-07-27 (Asia/Shanghai)
+- Commit:
+	- this commit — decode unicode escapes in card subtitle
+- Root cause:
+	- The stream/request envelope uses JSON parsing, but some text field values retain a second layer of JSON escapes (for example literal `\u8bc1`). The extractor accepted those string values directly, so `lastReply` and `lastInput` reached the desktop card as source escape sequences.
+- Changes:
+	- src/content/interceptor.js: Added a local safe text decoder in both isolated interceptor scopes. It first accepts a complete JSON string through the existing `JSON.parse` helper; otherwise it decodes valid `\uXXXX` sequences, JSON simple escapes (`\n`, `\r`, `\t`, `\"`, `\\`, and so on), and valid surrogate pairs by a non-throwing scanner. Invalid escape syntax is kept verbatim.
+	- src/content/interceptor.js: Applied the decoder before accepting stream text deltas as `lastReply`, and when extracting request-body input from JSON, URLSearchParams, and FormData. Markdown syntax, including `**`, is not transformed.
+- Self test:
+	- `node --check src/content/interceptor.js`, `node --check desktop/renderer/renderer.js`, and `git diff --check` passed.
+	- Executed the actual decoder source extracted from `interceptor.js`: `37\u8bc1\u4f2a**\uff1a...` became `37证伪**：...`; newline/quote escapes and an emoji surrogate pair decoded correctly; invalid `\u12xz` remained unchanged; Markdown stars remained literal. No manifest or desktop rendering changes were made.
+- Remaining:
+	- Manual whole-machine verification with a Chinese Notion AI reply remains appropriate to confirm the desktop subtitle contains normal Chinese rather than literal `\uXXXX` text.

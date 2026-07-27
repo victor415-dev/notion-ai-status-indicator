@@ -30,6 +30,45 @@
 		}
 	}
 
+	function decodeEscapedText(value) {
+		const raw = String(value || "");
+		const parsed = safeJsonParse(raw);
+		if (typeof parsed === "string") return parsed;
+		if (!/\\(?:u[0-9a-fA-F]{4}|[\\"/bfnrt])/.test(raw)) return raw;
+		let decoded = "";
+		for (let index = 0; index < raw.length; index += 1) {
+			if (raw[index] !== "\\" || index + 1 >= raw.length) {
+				decoded += raw[index];
+				continue;
+			}
+			const escape = raw[index + 1];
+			const simple = { "\\": "\\", "\"": "\"", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" };
+			if (Object.prototype.hasOwnProperty.call(simple, escape)) {
+				decoded += simple[escape];
+				index += 1;
+				continue;
+			}
+			if (escape === "u" && /^[0-9a-fA-F]{4}$/.test(raw.slice(index + 2, index + 6))) {
+				const unit = parseInt(raw.slice(index + 2, index + 6), 16);
+				const nextEscape = raw.slice(index + 6, index + 12);
+				if (unit >= 0xd800 && unit <= 0xdbff && /^\\u[0-9a-fA-F]{4}$/.test(nextEscape)) {
+					const low = parseInt(nextEscape.slice(2), 16);
+					if (low >= 0xdc00 && low <= 0xdfff) {
+						decoded += String.fromCodePoint(0x10000 + ((unit - 0xd800) << 10) + low - 0xdc00);
+						index += 11;
+						continue;
+					}
+				}
+				decoded += String.fromCharCode(unit);
+				index += 5;
+				continue;
+			}
+			decoded += `\\${escape}`;
+			index += 1;
+		}
+		return decoded;
+	}
+
 	function findTranscriptId(value, depth) {
 		if (!value || depth > 6) return "";
 		if (typeof value !== "object") return "";
@@ -173,7 +212,8 @@
 				"model",
 			]);
 			if (!textKeys.has(key) || skipKeys.has(key)) return;
-			if (looksLikeDisplayText(value)) out.push(value.trim());
+			const decoded = decodeEscapedText(value);
+			if (looksLikeDisplayText(decoded)) out.push(decoded.trim());
 			return;
 		}
 		if (typeof value !== "object") return;
@@ -342,6 +382,45 @@
 		}
 	}
 
+	function decodeEscapedText(value) {
+		const raw = String(value || "");
+		const parsed = safeJsonParse(raw);
+		if (typeof parsed === "string") return parsed;
+		if (!/\\(?:u[0-9a-fA-F]{4}|[\\"/bfnrt])/.test(raw)) return raw;
+		let decoded = "";
+		for (let index = 0; index < raw.length; index += 1) {
+			if (raw[index] !== "\\" || index + 1 >= raw.length) {
+				decoded += raw[index];
+				continue;
+			}
+			const escape = raw[index + 1];
+			const simple = { "\\": "\\", "\"": "\"", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" };
+			if (Object.prototype.hasOwnProperty.call(simple, escape)) {
+				decoded += simple[escape];
+				index += 1;
+				continue;
+			}
+			if (escape === "u" && /^[0-9a-fA-F]{4}$/.test(raw.slice(index + 2, index + 6))) {
+				const unit = parseInt(raw.slice(index + 2, index + 6), 16);
+				const nextEscape = raw.slice(index + 6, index + 12);
+				if (unit >= 0xd800 && unit <= 0xdbff && /^\\u[0-9a-fA-F]{4}$/.test(nextEscape)) {
+					const low = parseInt(nextEscape.slice(2), 16);
+					if (low >= 0xdc00 && low <= 0xdfff) {
+						decoded += String.fromCodePoint(0x10000 + ((unit - 0xd800) << 10) + low - 0xdc00);
+						index += 11;
+						continue;
+					}
+				}
+				decoded += String.fromCharCode(unit);
+				index += 5;
+				continue;
+			}
+			decoded += `\\${escape}`;
+			index += 1;
+		}
+		return decoded;
+	}
+
 	function findTranscriptId(value, depth) {
 		if (!value || depth > 6) return "";
 		if (typeof value !== "object") return "";
@@ -400,11 +479,11 @@
 			}
 			if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
 				const t = body.get("input") || body.get("text") || "";
-				return String(t || "").slice(0, 80);
+				return decodeEscapedText(t).slice(0, 80);
 			}
 			if (typeof FormData !== "undefined" && body instanceof FormData) {
 				const t = body.get("input") || body.get("text") || "";
-				return String(t || "").slice(0, 80);
+				return decodeEscapedText(t).slice(0, 80);
 			}
 			if (typeof body === "object") {
 				return extractFromJson(body) || "";
@@ -427,12 +506,12 @@
 					const role = (m.role || m.author || "").toLowerCase();
 					if (role && role !== "user") continue;
 					const content = typeof m.content === "string" ? m.content : (m.text || "");
-					if (content) return String(content).trim().slice(0, 80);
+					if (content) return decodeEscapedText(content).trim().slice(0, 80);
 				}
 			}
 			// 退化：input / prompt / text
 			const t = j.input || j.prompt || j.text || "";
-			return t ? String(t).trim().slice(0, 80) : "";
+			return t ? decodeEscapedText(t).trim().slice(0, 80) : "";
 		} catch (e) {
 			return "";
 		}
