@@ -536,3 +536,18 @@
 	- No frame, runtime-key, CSS, or extension behavior was changed. T-016c's all-frame transparency and T-016b's no-shadow surface remain the correct implementation for the inspected current assets. This record-only commit avoids destructively keying cat-edge colors based on a disproven premise.
 - Remaining:
 	- If a white plate is still observed on another machine, capture the running commit SHA and screenshot from that machine; the current checked-out and rendered `main` asset path does not reproduce it.
+
+## T-018b
+- Date: 2026-07-27 (Asia/Shanghai)
+- Commit:
+	- this commit — reveal cards only after bounds applied + incremental render
+- Changes:
+	- desktop/renderer/renderer.js: Replaced the previous one-rAF reveal with a real inner-window-size gate. Pending cards are revealed only after the `window.resize` handler observes `innerWidth` and `innerHeight` at least the computed target size minus a 2px tolerance. If the target size is already live, reveal happens immediately; otherwise a 300ms timeout releases the pending state and logs `[NAI-PET] reveal timeout` to avoid permanent hiding.
+	- desktop/renderer/renderer.js: Replaced `cardsEl.textContent = ""` whole-list rebuilding with key-based reconciliation. Existing nodes are retained by `dataset.key`; title, reply, state indicator, and focus target are updated in place. Only new conversations create nodes, removed conversations remove nodes, and a same-count text/state refresh does not re-enter the pending/reveal sequence.
+	- desktop/renderer/renderer.js: Pending/reveal is triggered only when the computed layout signature changes (empty/collapsed/expanded state, card count, or target dimensions). No-card paths retain real `hidden` behavior; collapse, expand, and drag continue to schedule the existing layout resize path.
+- Self test:
+	- `node --check desktop/renderer/renderer.js` and `git diff --check` passed.
+	- Reproducible source assertions passed for: actual `window.innerWidth/innerHeight` gating, resize listener, 300ms timeout and log, absence of `cardsEl.textContent = ""`, keyed reconciliation, and layout-change-only pending entry.
+	- Runtime WS stress injection could not run in this environment: two `cd desktop && npm start` attempts exited before renderer startup with Electron `SIGKILL`, leaving port 8787 unavailable (`ECONNREFUSED`). This is recorded as an environment launch failure, not a passing runtime test; no workaround or protocol change was attempted.
+- Remaining:
+	- Manual whole-machine acceptance remains required: keep a real conversation running for 60s with frequent updates and multiple cards, verifying no title-line flash, stable in-place text updates, and normal collapse/expand/drag behavior.

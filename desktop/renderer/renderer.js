@@ -58,7 +58,11 @@ let lastPointer = null;
 let layoutState = { below: false, horizontal: "end" };
 let layoutFrame = 0;
 let layoutRequest = 0;
-let cardsRevealFrame = 0;
+let cardLayoutSignature = "";
+let pendingCardReveal = null;
+let cardRevealTimer = 0;
+const CARD_REVEAL_TIMEOUT_MS = 300;
+const CARD_REVEAL_TOLERANCE = 2;
 
 function loadSpriteMap() {
 	try {
@@ -603,20 +607,43 @@ function setCardsLayoutPending(pending) {
 	badgeEl.classList.toggle("is-layout-pending", pending);
 }
 
-function revealCardsAfterResize(request) {
-	if (cardsRevealFrame) cancelAnimationFrame(cardsRevealFrame);
-	cardsRevealFrame = requestAnimationFrame(() => {
-		cardsRevealFrame = 0;
-		if (request !== layoutRequest || collapsed || !visibleCards(snapshot).length) return;
-		setCardsLayoutPending(false);
-	});
+function targetSizeReached(size) {
+	return window.innerWidth >= size.width - CARD_REVEAL_TOLERANCE
+		&& window.innerHeight >= size.height - CARD_REVEAL_TOLERANCE;
 }
 
-function resizePetForLayout(payload, request, revealCards) {
+function clearPendingCardReveal() {
+	if (cardRevealTimer) clearTimeout(cardRevealTimer);
+	cardRevealTimer = 0;
+	pendingCardReveal = null;
+}
+
+function revealCardsWhenBoundsApplied() {
+	if (!pendingCardReveal || collapsed || !visibleCards(snapshot).length) return;
+	if (!targetSizeReached(pendingCardReveal.size)) return;
+	clearPendingCardReveal();
+	setCardsLayoutPending(false);
+}
+
+function waitForCardBounds(size) {
+	if (targetSizeReached(size)) {
+		clearPendingCardReveal();
+		setCardsLayoutPending(false);
+		return;
+	}
+	clearPendingCardReveal();
+	pendingCardReveal = { size };
+	setCardsLayoutPending(true);
+	cardRevealTimer = setTimeout(() => {
+		if (!pendingCardReveal) return;
+		console.warn("[NAI-PET] reveal timeout", `w=${pendingCardReveal.size.width}`, `h=${pendingCardReveal.size.height}`);
+		clearPendingCardReveal();
+		setCardsLayoutPending(false);
+	}, CARD_REVEAL_TIMEOUT_MS);
+}
+
+function resizePetForLayout(payload) {
 	return Promise.resolve(window.naiBridge.resize(payload))
-		.then(() => {
-			if (revealCards) revealCardsAfterResize(request);
-		})
 		.catch((error) => console.warn("[NAI-PET] resize failed", error && (error.stack || error.message || String(error))));
 }
 
@@ -625,11 +652,10 @@ function scheduleLayoutResize() {
 	layoutFrame = requestAnimationFrame(() => {
 		layoutFrame = 0;
 		const list = visibleCards(snapshot);
-		const revealCards = !collapsed && list.length > 0;
 		const size = computeSize(collapsed ? 0 : list.length, !collapsed && list.length > 0, collapsed && list.length > 0);
 		const request = ++layoutRequest;
 		if (!window.naiBridge || typeof window.naiBridge.getLayoutContext !== "function") {
-			resizePetForLayout({ ...size, cards: list.length, layout: layoutPayload() }, request, revealCards);
+			resizePetForLayout({ ...size, cards: list.length, layout: layoutPayload() });
 			return;
 		}
 		window.naiBridge.getLayoutContext()
@@ -637,9 +663,9 @@ function scheduleLayoutResize() {
 				if (request !== layoutRequest) return;
 				const pet = context ? petBoundsForContext(context) : null;
 				applyLayout(nextLayout(context, size));
-				return resizePetForLayout({ ...size, cards: list.length, layout: layoutPayload(), pet }, request, revealCards);
+				return resizePetForLayout({ ...size, cards: list.length, layout: layoutPayload(), pet });
 			})
-			.catch(() => resizePetForLayout({ ...size, cards: list.length, layout: layoutPayload() }, request, revealCards));
+			.catch(() => resizePetForLayout({ ...size, cards: list.length, layout: layoutPayload() }));
 	});
 }
 
@@ -647,60 +673,87 @@ function updateWindowSize() {
 	scheduleLayoutResize();
 }
 
+function cardKey(conversation) {
+	return conversation && (conversation.conversationId || String(conversation.tabId || ""));
+}
+
+function createCard() {
+	const card = document.createElement("div");
+	card.className = "card";
+	card.addEventListener("click", () => {
+		window.naiBridge.openNotion({ tabId: card.dataset.focusTarget || "latest" });
+	});
+
+	const ind = document.createElement("span");
+	ind.className = "ind";
+	const main = document.createElement("div");
+	const title = document.createElement("div");
+	title.className = "card-title";
+	const sub = document.createElement("div");
+	sub.className = "card-sub";
+	main.appendChild(title);
+	main.appendChild(sub);
+	card.appendChild(ind);
+	card.appendChild(main);
+	return card;
+}
+
+function updateCard(card, conversation, key) {
+	card.dataset.key = key;
+	card.dataset.focusTarget = conversation.conversationId ? `conversation:${conversation.conversationId}` : String(conversation.tabId || "");
+	const ind = card.querySelector(".ind");
+	const title = card.querySelector(".card-title");
+	const sub = card.querySelector(".card-sub");
+	ind.className = "ind " + (isRunning(conversation.state) ? "run spin" : (conversation.state === "done" ? "done" : ""));
+	ind.textContent = conversation.state === "done" ? "✓" : "";
+	title.textContent = truncate(normalizeTitle(conversation.title), 16);
+	sub.textContent = truncate(replyPreview(conversation), 42);
+}
+
+function reconcileCards(list) {
+	const existing = new Map(Array.from(cardsEl.children).map((card) => [card.dataset.key, card]));
+	for (const conversation of list) {
+		const key = cardKey(conversation);
+		let card = existing.get(key);
+		if (card) existing.delete(key);
+		else card = createCard();
+		updateCard(card, conversation, key);
+		cardsEl.appendChild(card);
+	}
+	for (const card of existing.values()) card.remove();
+}
+
 function render() {
 	const list = sorted(visibleCards(snapshot));
 	const hasCards = list.length > 0;
-
 	if (!hasCards) collapsed = false;
-	setCardsLayoutPending(hasCards && !collapsed);
+	const isExpanded = hasCards && !collapsed;
+	const size = computeSize(collapsed ? 0 : list.length, isExpanded, collapsed && hasCards);
+	const layoutSignature = `${isExpanded ? "expanded" : collapsed ? "collapsed" : "empty"}:${list.length}:${size.width}x${size.height}`;
+	const layoutChanged = layoutSignature !== cardLayoutSignature;
+	cardLayoutSignature = layoutSignature;
 
 	cardsEl.hidden = collapsed || !hasCards;
 	collapseEl.hidden = collapsed || !hasCards;
 	badgeEl.hidden = !collapsed || !hasCards;
-	cardsEl.textContent = "";
 
 	if (!hasCards) {
+		clearPendingCardReveal();
 		setCardsLayoutPending(false);
 		updateWindowSize();
 		return;
 	}
 
 	if (collapsed) {
+		clearPendingCardReveal();
 		setCardsLayoutPending(false);
 		badgeEl.textContent = String(list.length);
 		updateWindowSize();
 		return;
 	}
 
-	for (const c of list) {
-		const card = document.createElement("div");
-		card.className = "card";
-		card.dataset.key = c.conversationId || String(c.tabId || "");
-
-		const ind = document.createElement("span");
-		ind.className = "ind " + (isRunning(c.state) ? "run spin" : (c.state === "done" ? "done" : ""));
-		if (c.state === "done") ind.textContent = "✓";
-
-		const main = document.createElement("div");
-		const title = document.createElement("div");
-		title.className = "card-title";
-		title.textContent = truncate(normalizeTitle(c.title), 16);
-
-		const sub = document.createElement("div");
-		sub.className = "card-sub";
-		sub.textContent = truncate(replyPreview(c), 42);
-
-		main.appendChild(title);
-		main.appendChild(sub);
-		card.appendChild(ind);
-		card.appendChild(main);
-
-		card.addEventListener("click", () => {
-			window.naiBridge.openNotion({ tabId: c.conversationId ? `conversation:${c.conversationId}` : c.tabId });
-		});
-
-		cardsEl.appendChild(card);
-	}
+	if (layoutChanged) waitForCardBounds(size);
+	reconcileCards(list);
 
 	updateWindowSize();
 }
@@ -758,6 +811,10 @@ window.addEventListener("mousemove", (e) => {
 
 window.addEventListener("mouseout", (e) => {
 	if (!e.relatedTarget && !drag) setPetMouseIgnore(true);
+});
+
+window.addEventListener("resize", () => {
+	revealCardsWhenBoundsApplied();
 });
 
 window.addEventListener("mouseup", (e) => {
