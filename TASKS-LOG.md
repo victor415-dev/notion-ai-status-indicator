@@ -551,3 +551,23 @@
 	- Runtime WS stress injection could not run in this environment: two `cd desktop && npm start` attempts exited before renderer startup with Electron `SIGKILL`, leaving port 8787 unavailable (`ECONNREFUSED`). This is recorded as an environment launch failure, not a passing runtime test; no workaround or protocol change was attempted.
 - Remaining:
 	- Manual whole-machine acceptance remains required: keep a real conversation running for 60s with frequent updates and multiple cards, verifying no title-line flash, stable in-place text updates, and normal collapse/expand/drag behavior.
+
+## T-019
+- Date: 2026-07-27 (Asia/Shanghai)
+- Commit:
+	- this commit — repair electron runtime env
+- Initial health check (`desktop/`):
+	- `node_modules/electron` existed; `node_modules/electron/dist/Electron.app` and `Contents/MacOS/Electron` initially existed and the binary was executable.
+	- `node_modules/electron/path.txt` contained `Electron.app/Contents/MacOS/Electron`; resolved relative to Electron's `dist/` directory, that target was executable.
+	- `npm ls electron --depth=0` reported `electron@31.7.7`; `package.json` declares compatible `^31.0.0`.
+	- `npx electron --version` did not print a version: the Electron binary was terminated with `SIGKILL`.
+- Repair and forensic result:
+	- Removed only `desktop/node_modules` and reinstalled with `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install`; no product source or dependency declaration was changed. npm created an untracked `package-lock.json`, which was removed because the dependency graph did not need a lockfile change.
+	- Immediately after the first reinstall, `Electron.app`, its executable, and the `path.txt` target were all valid. Re-running `npx electron --version` again ended in `SIGKILL`; `npm start` then failed with `spawn .../Electron ENOENT`.
+	- Subsequent `file`, `ls`, `xattr`, `codesign`, and `otool` checks confirmed `Electron.app` had disappeared from `node_modules/electron/dist`, leaving only Electron package metadata and license/version files. This proves an external runtime/security mechanism removes the binary after launch, rather than a missing repository file or dependency-version mismatch.
+	- Performed a final clean npmmirror reinstall using `--no-package-lock`. Final verification without another launch: `Electron.app` exists, `Contents/MacOS/Electron` is executable, and `path.txt` resolves to that executable.
+- Startup and visual verification:
+	- GUI launch cannot be completed in this execution environment because launch triggers the external deletion above. No workaround or product-code change was attempted.
+	- This T-019 cycle therefore has no new post-reinstall cat-background observation. The prior T-016d real Electron screenshot on current source showed only the cat silhouette and outline, with no white plate.
+- Remaining:
+	- The user must run `cd desktop && npm start` on the local macOS session after confirming the system no longer removes `node_modules/electron/dist/Electron.app`. If it is removed again, investigate the host security/cleanup policy; the repository and npm installation are intact before execution.
