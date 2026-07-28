@@ -15,6 +15,9 @@ const SPRITE_WHITE_THRESHOLD = 235;
 const SPRITE_BACKGROUND_DELTA = 20;
 const FLOATING_SPECK_MAX_AREA = 400;
 const FLOATING_SPECK_MAX_HEIGHT = 20;
+const TOP_GLYPH_BAND_UPWARD_PADDING = 10;
+const TOP_GLYPH_BAND_BODY_FRACTION = 0.25;
+const TOP_GLYPH_OPENING_RADIUS = 1;
 
 const RANK = { thinking: 0, responding: 0, done: 1, idle: 2 };
 
@@ -155,6 +158,78 @@ function stripFloatingSpecks(canvas, context) {
 	}
 	if (specks.length) context.putImageData(imageData, 0, 0);
 	return specks.length;
+}
+
+function topGlyphBand(body, height) {
+	const bodyHeight = body.bottom - body.top + 1;
+	return {
+		top: Math.max(0, body.top - TOP_GLYPH_BAND_UPWARD_PADDING),
+		bottom: Math.min(height - 1, body.top + Math.ceil(bodyHeight * TOP_GLYPH_BAND_BODY_FRACTION) - 1),
+	};
+}
+
+function openAlphaMask(mask, width, height, radius) {
+	const eroded = new Uint8Array(mask.length);
+	for (let y = 0; y < height; y += 1) {
+		for (let x = 0; x < width; x += 1) {
+			const pixel = y * width + x;
+			if (!mask[pixel]) continue;
+			let survives = true;
+			for (let offsetY = -radius; offsetY <= radius && survives; offsetY += 1) {
+				for (let offsetX = -radius; offsetX <= radius; offsetX += 1) {
+					const nextX = x + offsetX;
+					const nextY = y + offsetY;
+					if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height || !mask[nextY * width + nextX]) {
+						survives = false;
+						break;
+					}
+				}
+			}
+			if (survives) eroded[pixel] = 1;
+		}
+	}
+
+	const opened = new Uint8Array(mask.length);
+	for (let y = 0; y < height; y += 1) {
+		for (let x = 0; x < width; x += 1) {
+			if (!eroded[y * width + x]) continue;
+			for (let offsetY = -radius; offsetY <= radius; offsetY += 1) {
+				for (let offsetX = -radius; offsetX <= radius; offsetX += 1) {
+					const nextX = x + offsetX;
+					const nextY = y + offsetY;
+					if (nextX >= 0 && nextX < width && nextY >= 0 && nextY < height) opened[nextY * width + nextX] = 1;
+				}
+			}
+		}
+	}
+	return opened;
+}
+
+function stripTopBandGlyphs(canvas, context) {
+	const { width, height } = canvas;
+	const imageData = context.getImageData(0, 0, width, height);
+	const { data } = imageData;
+	const components = opaqueComponents(data, width, height);
+	if (!components.length) return 0;
+	const band = topGlyphBand(components[0], height);
+	const mask = new Uint8Array(width * height);
+	for (let pixel = 0; pixel < mask.length; pixel += 1) mask[pixel] = data[pixel * 4 + 3] > 0 ? 1 : 0;
+	const opened = openAlphaMask(mask, width, height, TOP_GLYPH_OPENING_RADIUS);
+	let stripped = 0;
+	for (let y = band.top; y <= band.bottom; y += 1) {
+		for (let x = 0; x < width; x += 1) {
+			const pixel = y * width + x;
+			if (!mask[pixel] || opened[pixel]) continue;
+			const offset = pixel * 4;
+			data[offset] = 0;
+			data[offset + 1] = 0;
+			data[offset + 2] = 0;
+			data[offset + 3] = 0;
+			stripped += 1;
+		}
+	}
+	if (stripped) context.putImageData(imageData, 0, 0);
+	return stripped;
 }
 
 function keySpriteBackground(canvas, context, whiteThreshold = SPRITE_WHITE_THRESHOLD, backgroundDelta = SPRITE_BACKGROUND_DELTA) {
@@ -302,6 +377,8 @@ function loadKeyedSprite(relPath) {
 				context.drawImage(image, 0, 0, canvas.width, canvas.height);
 				const strippedSpecks = stripFloatingSpecks(canvas, context);
 				if (strippedSpecks) console.info("[NAI-PET] stripped", strippedSpecks, "specks", relPath);
+				const strippedGlyphBand = stripTopBandGlyphs(canvas, context);
+				if (strippedGlyphBand) console.info("[NAI-PET] stripped glyph band", `px=${strippedGlyphBand}`, relPath);
 				keySpriteBackground(canvas, context);
 				if (hasOpaqueSpriteCorner(canvas, context)) {
 					console.warn("[NAI-PET] sprite plate residual", relPath);

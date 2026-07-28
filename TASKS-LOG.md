@@ -604,3 +604,21 @@
 	- Executed the actual decoder source extracted from `interceptor.js`: `37\u8bc1\u4f2a**\uff1a...` became `37证伪**：...`; newline/quote escapes and an emoji surrogate pair decoded correctly; invalid `\u12xz` remained unchanged; Markdown stars remained literal. No manifest or desktop rendering changes were made.
 - Remaining:
 	- Manual whole-machine verification with a Chinese Notion AI reply remains appropriate to confirm the desktop subtitle contains normal Chinese rather than literal `\uXXXX` text.
+
+## T-018d
+- Date: 2026-07-28 (Asia/Shanghai)
+- Commit:
+	- this commit — remove body-attached glyph artifacts in top band
+- A-step evidence:
+	- Generated and visually inspected the 4x top-band contact sheets at `/tmp/t018d-before-contact-sheet.png` and `/tmp/t018d-after-contact-sheet.png`. The band begins 10px above the largest opaque cat body box and extends through its top 25%. The before sheet confirms short connected strokes over the ears/forehead in the waiting and throw loops; the after sheet has no visible glyph-like marks while preserving the helmet and ear contours.
+	- The affected frame list, with alpha pixels removed from the band, is: `done_00` 9, `done_01` 16, `done_02` 2, `done_03` 2; `hover_00` 7, `hover_01` 8, `hover_02` 9; `idle_00` 8, `idle_01` 1, `idle_02` 8, `idle_03` 3, `idle_04` 11, `idle_05` 17; `throw_00` 33, `throw_01` 5, `throw_04` 29; `wait_00` 19, `wait_01` 17, `wait_02` 18, `wait_03` 15, `wait_04` 9, and `wait_05` 10. The most obvious pre-cleanup connected artifacts were in `throw_00` and `wait_00`; the remaining affected frames had one-to-few-pixel attached strokes in the same band.
+- Changes:
+	- `desktop/scripts/rekey-pet-frames.py`: Added reproducible before/after 4x top-band contact-sheet output. Cat frames now receive a radius-1 square morphological opening only within the top band, using `original AND opened` alpha semantics so pixels outside the band are untouched. It fails when the largest-body area changes by 2% or more, or a thin glyph-shaped component remains. Plane frames deliberately skip this cat-specific filter so the paper-plane line art cannot be damaged.
+	- `desktop/renderer/assets/pet/frames/*.png`: Applied the validated offline cleanup to the affected cat frames. The initial run's largest body-area change was `1.77%` (`plane_02` before plane exclusion); cat frames were at most `0.22%` in that pass, and all later idempotence checks were below that bound. No plane asset is changed by this task.
+	- `desktop/renderer/renderer.js`: Kept T-018c's disconnected-speck removal and added the same radius-1 top-band opening before background keying and outline creation. When it clears pixels it logs `[NAI-PET] stripped glyph band px=<n> <frame>`.
+- QA and self test:
+	- The before/after contact sheets were visually inspected on the enlarged band. The after sheet has no text-like strokes above the cat; the head, ears, helmet edge, animations, and plane assets remain intact.
+	- Reproducible alpha scan passed across all 36 192x192 frames: every cat top band has no remaining component matching a width `<=2px`, length `>=4px` glyph stroke. `node --check desktop/renderer/renderer.js`, `python3 -m py_compile desktop/scripts/rekey-pet-frames.py`, and `git diff --check` passed.
+	- Electron GUI start was not retried because T-019 established that this host's external policy deletes `Electron.app` after launch. The task remains suitable for manual 60-second waiting/idle-loop validation on the target desktop.
+- Remaining:
+	- Manual whole-machine acceptance should verify that waiting and idle loops no longer flash head-top characters and that cat drag, cards, outline, and throw behavior remain normal.
