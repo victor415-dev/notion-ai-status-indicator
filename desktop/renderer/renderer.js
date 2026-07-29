@@ -53,6 +53,7 @@ let spriteDoneUntil = 0;
 let activeThrow = null; // { key, conversationId, tabId, title, spawned }
 const throwQueue = [];
 const queuedThrowKeys = new Set();
+const thrownKeys = new Set();
 const spriteFrameDataUrls = new Map();
 const spriteFrameLoads = new Map();
 const spriteFrameMasks = new Map();
@@ -505,11 +506,9 @@ function scheduleSpriteLoop(mode, index = 0) {
 }
 
 function finishThrow() {
-	const key = activeThrow && activeThrow.key;
+	const keys = activeThrow && activeThrow.keys;
 	activeThrow = null;
-	if (key) {
-		queuedThrowKeys.delete(key);
-	}
+	for (const key of keys || []) queuedThrowKeys.delete(key);
 	spriteDoneUntil = Date.now() + 520;
 	scheduleSpriteLoop("done");
 	spriteDoneTimer = setTimeout(() => {
@@ -580,13 +579,39 @@ function pumpThrowQueue() {
 
 function queueThrow(throwMeta) {
 	if (!spriteVisible) return;
-	if (!throwMeta || !throwMeta.key || queuedThrowKeys.has(throwMeta.key)) return;
-	if (activeThrow && activeThrow.key === throwMeta.key) return;
+	if (!throwMeta || !throwMeta.key) return;
+	const keys = throwMeta.keys || [throwMeta.key];
+	if (keys.some((key) => thrownKeys.has(key))) {
+		console.info("[NAI-PET] throw deduped", throwMeta.key);
+		return;
+	}
+	if (keys.some((key) => queuedThrowKeys.has(key))) return;
+	if (activeThrow && keys.some((key) => activeThrow.keys && activeThrow.keys.includes(key))) return;
 	if (throwQueue.length >= 3) return;
-	queuedThrowKeys.add(throwMeta.key);
+	for (const key of keys) {
+		queuedThrowKeys.add(key);
+		thrownKeys.add(key);
+	}
 	throwQueue.push(throwMeta);
 	console.info("[NAI-PET] throw queued", throwMeta.key);
 	pumpThrowQueue();
+}
+
+function snapshotKeys(conversation) {
+	const tabKey = conversation && conversation.tabId != null && conversation.tabId !== "" ? String(conversation.tabId) : "";
+	const conversationKey = conversation && conversation.conversationId ? String(conversation.conversationId) : "";
+	const keys = Array.from(new Set([conversationKey, tabKey].filter(Boolean)));
+	return { key: conversationKey || tabKey, keys };
+}
+
+function armThrowKeys(keys, label) {
+	let armed = false;
+	for (const key of keys) {
+		if (!thrownKeys.delete(key)) continue;
+		queuedThrowKeys.delete(key);
+		armed = true;
+	}
+	if (armed) console.info("[NAI-PET] throw armed", label);
 }
 
 function updateSpriteState(force = false) {
@@ -618,14 +643,17 @@ function syncSnapshotTransitions(list) {
 	let waiting = false;
 	for (const c of list || []) {
 		if (!c) continue;
-		const key = c.conversationId || String(c.tabId || "");
-		nextStates.set(key, c.state);
+		const identity = snapshotKeys(c);
+		if (!identity.key) continue;
+		for (const key of identity.keys) nextStates.set(key, c.state);
 		if (isRunning(c.state)) waiting = true;
+		if (isRunning(c.state)) armThrowKeys(identity.keys, identity.key);
 		if (spriteInitialized) {
-			const prev = spritePrevStates.get(key);
-			if (prev !== "done" && c.state === "done") {
+			const wasDone = identity.keys.some((key) => spritePrevStates.get(key) === "done");
+			if (!wasDone && c.state === "done") {
 				queueThrow({
-					key,
+					key: identity.key,
+					keys: identity.keys,
 					conversationId: c.conversationId || "",
 					tabId: c.tabId || "",
 					title: c.title || "",

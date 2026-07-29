@@ -622,3 +622,19 @@
 	- Electron GUI start was not retried because T-019 established that this host's external policy deletes `Electron.app` after launch. The task remains suitable for manual 60-second waiting/idle-loop validation on the target desktop.
 - Remaining:
 	- Manual whole-machine acceptance should verify that waiting and idle loops no longer flash head-top characters and that cat drag, cards, outline, and throw behavior remain normal.
+
+## T-022
+- Date: 2026-07-29 (Asia/Shanghai)
+- Commit:
+	- this commit — dedupe plane throws per completion
+- Root cause:
+	- Throw deduplication used only the transient `conversationId || tabId` key. A tab-fallback record later gaining a real conversation id appeared as a new done record. Replacing `spritePrevStates` with each snapshot also treated a done record that briefly disappeared during a reconnect as new. Finally, `finishThrow()` removed the only dedupe key, allowing either case to enqueue a second plane.
+- Changes:
+	- `desktop/renderer/renderer.js`: Added persistent `thrownKeys`, which is populated when a throw is successfully queued and is not cleared by animation completion, snapshot absence, or pet hide/show. `queueThrow()` emits `[NAI-PET] throw deduped <key>` for a repeated completion.
+	- `desktop/renderer/renderer.js`: Each snapshot record now registers both its real conversation id and its tab fallback id. The two aliases are checked for previous done state and for queued/thrown state, so a tab-to-conversation identity upgrade cannot re-trigger the same completion.
+	- `desktop/renderer/renderer.js`: A `thinking` or `responding` state is the sole re-arm path. It removes the record's aliases from `thrownKeys`, releases stale queue aliases for the new lifecycle, and logs `[NAI-PET] throw armed <key>`. The queue capacity, 520ms done display, release frame, and plane window behavior are unchanged.
+- Self test:
+	- `node --check desktop/renderer/renderer.js` and `git diff --check` passed.
+	- Reproducible state-machine simulation passed: (1) `thinking(tab key) -> done(conversation key)` queued one throw; (2) `done -> empty snapshot -> done` queued one; (3) `done -> hidden -> visible -> done snapshot` queued one; and (4) `done -> thinking -> done` queued two, as required for two distinct completions.
+- Remaining:
+	- Manual acceptance should complete one conversation while observing a tab-fallback to conversation-id upgrade and a reconnect, confirming one plane only; then start a new task in the same conversation and confirm its next completion throws one new plane.
