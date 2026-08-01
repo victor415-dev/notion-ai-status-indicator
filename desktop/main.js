@@ -10,9 +10,13 @@ const HEARTBEAT_MS = 20000;
 const HIDE_NO_NOTION_MS = 5000;
 const HIDE_DISCONNECTED_MS = 10000;
 const DEFAULT_MARGIN = 24;
-const PET_SIZE = 56;
+const DEFAULT_PET_SIZE = 56;
+const MIN_PET_SIZE = 40;
+const MAX_PET_SIZE = 160;
 const WORK_AREA_MARGIN = 8;
 let POSITION_FILE = null;
+let SETTINGS_FILE = null;
+let petSize = DEFAULT_PET_SIZE;
 
 let mainWindow = null;
 let wss = null;
@@ -41,6 +45,31 @@ function clamp(n, min, max) {
 function getPositionFile() {
 	if (!POSITION_FILE) POSITION_FILE = path.join(app.getPath("userData"), "pet-position.json");
 	return POSITION_FILE;
+}
+
+function getSettingsFile() {
+	if (!SETTINGS_FILE) SETTINGS_FILE = path.join(app.getPath("userData"), "pet-settings.json");
+	return SETTINGS_FILE;
+}
+
+function clampPetSize(value) {
+	return clamp(Math.round(Number(value) || DEFAULT_PET_SIZE), MIN_PET_SIZE, MAX_PET_SIZE);
+}
+
+function loadSavedPetSize() {
+	try {
+		const raw = fs.readFileSync(getSettingsFile(), "utf8");
+		const data = JSON.parse(raw);
+		return clampPetSize(data && data.petSize);
+	} catch (e) {
+		return DEFAULT_PET_SIZE;
+	}
+}
+
+function savePetSize() {
+	try {
+		fs.writeFileSync(getSettingsFile(), JSON.stringify({ petSize }), "utf8");
+	} catch (e) {}
 }
 
 function getPrimaryWorkArea() {
@@ -79,24 +108,24 @@ function normalizeLayout(layout) {
 	};
 }
 
-function petOffset(width, height, layout) {
+function petOffset(width, height, layout, size = petSize) {
 	const normalized = normalizeLayout(layout);
 	return {
-		x: normalized.horizontal === "start" ? 0 : Math.max(0, width - PET_SIZE),
-		y: normalized.vertical === "top" ? 0 : Math.max(0, height - PET_SIZE),
+		x: normalized.horizontal === "start" ? 0 : Math.max(0, width - size),
+		y: normalized.vertical === "top" ? 0 : Math.max(0, height - size),
 	};
 }
 
-function workAreaForPet(x, y) {
-	const display = screen.getDisplayNearestPoint({ x: x + PET_SIZE / 2, y: y + PET_SIZE / 2 });
+function workAreaForPet(x, y, size = petSize) {
+	const display = screen.getDisplayNearestPoint({ x: x + size / 2, y: y + size / 2 });
 	return display && display.workArea ? display.workArea : getPrimaryWorkArea();
 }
 
-function clampToVisibleWorkArea(x, y, width, height, layout) {
-	const offset = petOffset(width, height, layout);
-	const wa = workAreaForPet(x + offset.x, y + offset.y);
-	const maxPetX = Math.max(wa.x + WORK_AREA_MARGIN, wa.x + wa.width - PET_SIZE - WORK_AREA_MARGIN);
-	const maxPetY = Math.max(wa.y + WORK_AREA_MARGIN, wa.y + wa.height - PET_SIZE - WORK_AREA_MARGIN);
+function clampToVisibleWorkArea(x, y, width, height, layout, size = petSize) {
+	const offset = petOffset(width, height, layout, size);
+	const wa = workAreaForPet(x + offset.x, y + offset.y, size);
+	const maxPetX = Math.max(wa.x + WORK_AREA_MARGIN, wa.x + wa.width - size - WORK_AREA_MARGIN);
+	const maxPetY = Math.max(wa.y + WORK_AREA_MARGIN, wa.y + wa.height - size - WORK_AREA_MARGIN);
 	const petX = clamp(x + offset.x, wa.x + WORK_AREA_MARGIN, maxPetX);
 	const petY = clamp(y + offset.y, wa.y + WORK_AREA_MARGIN, maxPetY);
 	let nextX = petX - offset.x;
@@ -116,16 +145,17 @@ function defaultBottomRightPosition(width, height) {
 }
 
 function createWindow() {
-	const width = 56;
-	const height = 56;
+	petSize = loadSavedPetSize();
+	const width = petSize;
+	const height = petSize;
 
 	let pos = loadSavedPosition();
 	if (!pos) pos = defaultBottomRightPosition(width, height);
 	pos = clampToVisibleWorkArea(pos.x, pos.y, width, height);
 
 	mainWindow = new BrowserWindow({
-		width: PET_SIZE,
-		height: PET_SIZE,
+		width: petSize,
+		height: petSize,
 		x: pos.x,
 		y: pos.y,
 		frame: false,
@@ -554,8 +584,9 @@ ipcMain.on("plane:open-notion", (_ev, payload) => {
 
 ipcMain.handle("pet:resize", (_ev, payload) => {
 	if (!mainWindow || !payload) return null;
-	const w = Math.max(56, Math.round(Number(payload.width) || 56));
-	const h = Math.max(56, Math.round(Number(payload.height) || 56));
+	petSize = clampPetSize(payload.petSize || petSize);
+	const w = Math.max(petSize, Math.round(Number(payload.width) || petSize));
+	const h = Math.max(petSize, Math.round(Number(payload.height) || petSize));
 
 	const layout = normalizeLayout(payload.layout);
 	const current = mainWindow.getBounds();
@@ -564,7 +595,7 @@ ipcMain.handle("pet:resize", (_ev, payload) => {
 		? payload.pet
 		: { x: current.x + currentOffset.x, y: current.y + currentOffset.y };
 	const offset = petOffset(w, h, layout);
-	const clamped = clampToVisibleWorkArea(pet.x - offset.x, pet.y - offset.y, w, h, layout);
+	const clamped = clampToVisibleWorkArea(pet.x - offset.x, pet.y - offset.y, w, h, layout, petSize);
 	const x = clamped.x;
 	const y = clamped.y;
 
@@ -620,6 +651,14 @@ ipcMain.on("pet:set-ignore-mouse", (_ev, payload) => {
 });
 
 ipcMain.handle("pet:get-layout-context", () => layoutContext());
+
+ipcMain.handle("pet:get-size", () => petSize);
+
+ipcMain.handle("pet:set-size", (_ev, value) => {
+	petSize = clampPetSize(value);
+	savePetSize();
+	return petSize;
+});
 
 ipcMain.on("pet:show-menu", () => {
 	const menu = Menu.buildFromTemplate([

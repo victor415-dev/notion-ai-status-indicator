@@ -655,3 +655,20 @@
 	- `node --check desktop/renderer/renderer.js`, `python3 -m py_compile desktop/scripts/rekey-pet-frames.py`, and `git diff --check` passed.
 - Remaining:
 	- Manual whole-machine validation should exercise idle/waiting/throw loops on the target desktop and confirm the right-eye-above patch no longer flickers while cards, drag, and the T-022 single-throw behavior remain normal.
+
+## T-023
+- Date: 2026-08-01 (Asia/Shanghai)
+- Commit:
+	- this commit — manual pet resize handle
+- Changes:
+	- `desktop/renderer/renderer.js`: Replaced the fixed renderer pet size with a clamped `petSize` in the 40-160px range. Added the hover-only opaque-pixel resize handle, mutually exclusive resize drag state, smooth diagonal size updates, directional anchor calculation for all four `layoutState` orientations, and `[NAI-PET] pet resized to <px>` release logging. Existing sprite mask scaling, card layout resize, drag/click, collapse, and T-022 throw code remain in place.
+	- `desktop/renderer/renderer.js`: Creates the 14px diagonal resize handle inside the pet element at startup, keeping the markup file unchanged while allowing the existing pointer whitelist to target it.
+	- `desktop/renderer/styles.css`: Added the translucent handle, hover state, hidden rule, cursor, and dark-mode colors. The pet sprite remains transparent and dynamically sized without changing its frame assets.
+	- `desktop/main.js`: Added `pet-settings.json` under Electron `userData`, loads the saved size at startup, clamps live resize requests, uses the variable size for offsets/work-area clamping, and persists the final released size through IPC.
+	- `desktop/preload.js`: Added context-isolated `getPetSize` and `setPetSize` IPC methods.
+- Self test:
+	- `node --check desktop/main.js`, `node --check desktop/preload.js`, `node --check desktop/renderer/renderer.js`, and `git diff --check` passed.
+	- Reproducible assertions passed for size clamping at 40/160px, bottom-right/top-right/bottom-left/top-left anchor calculations, persisted-size IPC, handle DOM/CSS, and the mouse-through whitelist. The existing T-018e frame files and T-022 throw scheduler were not modified.
+	- Electron GUI launch was not retried because T-019 recorded this host's external policy deleting `Electron.app` after launch. Manual target-machine checks remain required for hover visibility, smooth drag, restart persistence, edge clamping at 40px and 160px, and card/plane interaction.
+- Remaining:
+	- Manual acceptance should resize from the default to both limits, restart to confirm `pet-settings.json` restoration, and verify card layout, edge protection, click-through, reduced motion, done animation, and one-plane-per-completion behavior.

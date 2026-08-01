@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("naiBridge", {
 	loadPetSpriteMap,
 	readFrameDataUrl,
 	getLayoutContext: () => ipcRenderer.invoke("pet:get-layout-context"),
+	getPetSize: () => ipcRenderer.invoke("pet:get-size"),
+	setPetSize: (value) => ipcRenderer.invoke("pet:set-size", value),
 	openNotion: (payload) => ipcRenderer.send("pet:open-notion", payload),
 	resize: (payload) => ipcRenderer.invoke("pet:resize", payload),
 	dragStart: (payload) => ipcRenderer.send("pet:drag-start", payload),

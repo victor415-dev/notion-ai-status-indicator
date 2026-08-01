@@ -6,9 +6,19 @@ const cardsEl = document.getElementById("cards");
 const collapseEl = document.getElementById("collapse");
 const badgeEl = document.getElementById("badge");
 const petSpriteEl = document.getElementById("pet-sprite");
+const resizeHandleEl = document.createElement("button");
+resizeHandleEl.id = "resize-handle";
+resizeHandleEl.className = "resize-handle";
+resizeHandleEl.type = "button";
+resizeHandleEl.hidden = true;
+resizeHandleEl.setAttribute("aria-label", "调整宠物大小");
+resizeHandleEl.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M8 13h5V8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+petEl.appendChild(resizeHandleEl);
 
 const DRAG_THRESHOLD_PX = 4;
-const PET_SIZE = 56;
+const DEFAULT_PET_SIZE = 56;
+const MIN_PET_SIZE = 40;
+const MAX_PET_SIZE = 160;
 const LAYOUT_MARGIN = 8;
 const HIT_ALPHA_THRESHOLD = 16;
 const SPRITE_WHITE_THRESHOLD = 235;
@@ -33,7 +43,9 @@ const SPRITE_FALLBACKS = {
 
 let snapshot = [];
 let collapsed = false;
+let petSize = DEFAULT_PET_SIZE;
 let drag = null; // { startScreenX, startScreenY, moved, movingWindow }
+let resizeDrag = null; // { startScreenX, startScreenY, startSize, size }
 let spriteMap = null;
 let spriteReady = false;
 let spriteVisible = true;
@@ -442,10 +454,15 @@ function updatePointerInteractivity(point) {
 		if (!point) return;
 		lastPointer = { clientX: point.clientX, clientY: point.clientY };
 		const target = document.elementFromPoint(point.clientX, point.clientY);
-		const control = target && target.closest && target.closest(".card, #collapse, #badge");
+		const control = target && target.closest && target.closest(".card, #collapse, #badge, #resize-handle");
 		const inPet = target && target.closest && target.closest("#pet");
 		const interactive = Boolean(control) || (Boolean(inPet) && isOpaqueSpritePoint(currentSpriteMask, point, petSpriteEl.getBoundingClientRect()));
-		if (drag) {
+		if (resizeHandleEl) {
+			const overResizeHandle = target && target.closest && target.closest("#resize-handle");
+			const overOpaquePet = Boolean(currentSpriteMask && inPet && isOpaqueSpritePoint(currentSpriteMask, point, petSpriteEl.getBoundingClientRect()));
+			resizeHandleEl.hidden = Boolean(resizeDrag) ? false : !Boolean(overResizeHandle || overOpaquePet);
+		}
+		if (drag || resizeDrag) {
 			setPetMouseIgnore(false);
 			return;
 		}
@@ -716,9 +733,25 @@ function sorted(list) {
 	});
 }
 
+function clampPetSize(value) {
+	return Math.min(MAX_PET_SIZE, Math.max(MIN_PET_SIZE, Math.round(Number(value) || DEFAULT_PET_SIZE)));
+}
+
+function applyPetSize(nextSize) {
+	petSize = clampPetSize(nextSize);
+	if (petEl) {
+		petEl.style.width = `${petSize}px`;
+		petEl.style.height = `${petSize}px`;
+	}
+	if (petSpriteEl) {
+		petSpriteEl.style.width = `${petSize}px`;
+		petSpriteEl.style.height = `${petSize}px`;
+	}
+}
+
 function computeSize(cardCount, showArrow, showBadge) {
-	const petH = PET_SIZE;
-	const petW = PET_SIZE;
+	const petH = petSize;
+	const petW = petSize;
 	const gap = 8;
 	const badgeH = showBadge ? 20 + gap : 0;
 	const arrowH = showArrow ? 24 + gap : 0;
@@ -735,27 +768,27 @@ function layoutPayload() {
 	};
 }
 
-function petBoundsForContext(context, layout = layoutState) {
+function petBoundsForContext(context, layout = layoutState, size = petSize) {
 	const { bounds } = context;
 	return {
-		x: bounds.x + (layout.horizontal === "start" ? 0 : Math.max(0, bounds.width - PET_SIZE)),
-		y: bounds.y + (layout.below ? 0 : Math.max(0, bounds.height - PET_SIZE)),
+		x: bounds.x + (layout.horizontal === "start" ? 0 : Math.max(0, bounds.width - size)),
+		y: bounds.y + (layout.below ? 0 : Math.max(0, bounds.height - size)),
 	};
 }
 
-function nextLayout(context, size) {
+function nextLayout(context, size, petSizeOverride = petSize, petOverride = null) {
 	if (!context || !context.bounds || !context.workArea) return layoutState;
-	const pet = petBoundsForContext(context);
+	const pet = petOverride || petBoundsForContext(context, layoutState, petSizeOverride);
 	const wa = context.workArea;
 	const right = wa.x + wa.width;
 	const bottom = wa.y + wa.height;
 	let horizontal = layoutState.horizontal;
 	let below = layoutState.below;
 
-	if (pet.x - (size.width - PET_SIZE) < wa.x + LAYOUT_MARGIN) horizontal = "start";
+	if (pet.x - (size.width - petSizeOverride) < wa.x + LAYOUT_MARGIN) horizontal = "start";
 	else if (pet.x + size.width > right - LAYOUT_MARGIN) horizontal = "end";
 
-	if (pet.y - (size.height - PET_SIZE) < wa.y + LAYOUT_MARGIN) below = true;
+	if (pet.y - (size.height - petSizeOverride) < wa.y + LAYOUT_MARGIN) below = true;
 	else if (pet.y + size.height > bottom - LAYOUT_MARGIN) below = false;
 
 	return { below, horizontal };
@@ -812,6 +845,38 @@ function waitForCardBounds(size) {
 function resizePetForLayout(payload) {
 	return Promise.resolve(window.naiBridge.resize(payload))
 		.catch((error) => console.warn("[NAI-PET] resize failed", error && (error.stack || error.message || String(error))));
+}
+
+function anchoredPetForSize(pet, oldSize, nextSize) {
+	const anchorX = layoutState.horizontal === "end" ? pet.x + oldSize : pet.x;
+	const anchorY = layoutState.below ? pet.y : pet.y + oldSize;
+	return {
+		x: layoutState.horizontal === "end" ? anchorX - nextSize : anchorX,
+		y: layoutState.below ? anchorY : anchorY - nextSize,
+	};
+}
+
+function resizePetTo(nextSize) {
+	const targetSize = clampPetSize(nextSize);
+	if (targetSize === petSize) return;
+	const oldSize = petSize;
+	applyPetSize(targetSize);
+	const list = visibleCards(snapshot);
+	const size = computeSize(collapsed ? 0 : list.length, !collapsed && list.length > 0, collapsed && list.length > 0);
+	const request = ++layoutRequest;
+	if (!window.naiBridge || typeof window.naiBridge.getLayoutContext !== "function") {
+		resizePetForLayout({ ...size, petSize: targetSize, cards: list.length, layout: layoutPayload() });
+		return;
+	}
+	window.naiBridge.getLayoutContext()
+		.then((context) => {
+			if (request !== layoutRequest) return;
+			const currentPet = context ? petBoundsForContext(context, layoutState, oldSize) : null;
+			const pet = currentPet ? anchoredPetForSize(currentPet, oldSize, targetSize) : null;
+			applyLayout(nextLayout(context, size, targetSize, pet));
+			return resizePetForLayout({ ...size, petSize: targetSize, cards: list.length, layout: layoutPayload(), pet });
+		})
+		.catch(() => resizePetForLayout({ ...size, petSize: targetSize, cards: list.length, layout: layoutPayload() }));
 }
 
 function scheduleLayoutResize() {
@@ -953,18 +1018,45 @@ petEl.addEventListener("mousedown", (e) => {
 	e.preventDefault();
 });
 
-petEl.addEventListener("mouseenter", () => {
+resizeHandleEl.addEventListener("mousedown", (e) => {
+	if (e.button !== 0 || drag) return;
+	resizeDrag = {
+		startScreenX: e.screenX,
+		startScreenY: e.screenY,
+		startSize: petSize,
+		size: petSize,
+	};
+	spriteDragging = true;
+	setPetMouseIgnore(false);
+	e.preventDefault();
+	e.stopPropagation();
+});
+
+petEl.addEventListener("mouseenter", (e) => {
 	spriteHovered = true;
 	updateSpriteState();
+	updatePointerInteractivity(e);
 });
 
 petEl.addEventListener("mouseleave", () => {
 	spriteHovered = false;
+	if (!resizeDrag && resizeHandleEl) resizeHandleEl.hidden = true;
 	updateSpriteState();
 });
 
 window.addEventListener("mousemove", (e) => {
 	updatePointerInteractivity(e);
+	if (resizeDrag) {
+		const dx = e.screenX - resizeDrag.startScreenX;
+		const dy = e.screenY - resizeDrag.startScreenY;
+		const nextSize = clampPetSize(resizeDrag.startSize + (dx + dy) / 2);
+		if (nextSize !== resizeDrag.size) {
+			resizeDrag.size = nextSize;
+			resizePetTo(nextSize);
+		}
+		e.preventDefault();
+		return;
+	}
 	if (!drag) return;
 	if (totalDragDistance(e) >= DRAG_THRESHOLD_PX) {
 		drag.moved = true;
@@ -985,6 +1077,18 @@ window.addEventListener("resize", () => {
 });
 
 window.addEventListener("mouseup", (e) => {
+	if (resizeDrag) {
+		const finalSize = resizeDrag.size;
+		resizeDrag = null;
+		spriteDragging = false;
+		if (resizeHandleEl) resizeHandleEl.hidden = true;
+		Promise.resolve(window.naiBridge.setPetSize(finalSize))
+			.catch((error) => console.warn("[NAI-PET] pet size save failed", error && (error.stack || error.message || String(error))));
+		console.info("[NAI-PET] pet resized to", `${finalSize}px`);
+		scheduleLayoutResize();
+		updatePointerInteractivity(e);
+		return;
+	}
 	if (!drag) return;
 	const wasClick = totalDragDistance(e) < DRAG_THRESHOLD_PX;
 	const movedWindow = drag.movingWindow;
@@ -1033,6 +1137,15 @@ if (petSpriteEl) {
 
 spriteMap = loadSpriteMap();
 spriteReady = Boolean(spriteMap && spriteMap.states);
+applyPetSize(petSize);
+if (window.naiBridge && typeof window.naiBridge.getPetSize === "function") {
+	window.naiBridge.getPetSize()
+		.then((savedSize) => {
+			applyPetSize(savedSize);
+			updateWindowSize();
+		})
+		.catch((error) => console.warn("[NAI-PET] pet size load failed", error && (error.stack || error.message || String(error))));
+}
 if (spriteReady) {
 	setSpriteFrame(spriteFrames("idle")[0] || frameRel(SPRITE_FALLBACKS.idle));
 	pumpThrowQueue();

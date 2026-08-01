@@ -46,6 +46,7 @@ html, body {
 }
 
 .pet {
+	position: relative;
 	width: 56px;
 	height: 56px;
 	flex: 0 0 auto;
@@ -70,6 +71,33 @@ html, body {
 	display: block;
 	object-fit: contain;
 	pointer-events: none;
+}
+
+.resize-handle {
+	position: absolute;
+	right: 1px;
+	bottom: 1px;
+	width: 14px;
+	height: 14px;
+	padding: 0;
+	border: 1px solid rgba(15, 23, 42, 0.28);
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.76);
+	color: #52525b;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: nwse-resize;
+	z-index: 2;
+}
+
+.resize-handle[hidden] {
+	display: none !important;
+}
+
+.resize-handle:hover {
+	background: rgba(226, 232, 240, 0.96);
+	color: #1d4ed8;
 }
 
 .cards {
@@ -211,6 +239,12 @@ html, body {
 		background: #18181b;
 		color: #f8fafc;
 	}
+	.resize-handle {
+		border-color: rgba(244, 244, 245, 0.36);
+		background: rgba(39, 39, 42, 0.82);
+		color: #d4d4d8;
+	}
+	.resize-handle:hover { background: rgba(82, 82, 91, 0.96); color: #bfdbfe; }
 }
 
 @media (prefers-reduced-motion: reduce) {
