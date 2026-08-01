@@ -20,8 +20,8 @@ BACKGROUND_DELTA = 20
 FLOATING_SPECK_MAX_AREA = 400
 FLOATING_SPECK_MAX_HEIGHT = 20
 TOP_BAND_UPWARD_PADDING = 10
-TOP_BAND_BODY_FRACTION = 0.25
-TOP_BAND_OPENING_RADIUS = 1
+TOP_BAND_BODY_FRACTION = 0.40
+TOP_BAND_OPENING_RADIUS = 2
 
 
 def median(values: list[int]) -> int:
@@ -98,6 +98,21 @@ def top_band(body_box: tuple[int, int, int, int], height: int) -> tuple[int, int
 
 def alpha_mask(image: Image.Image) -> list[bool]:
     return [alpha > 0 for alpha in image.getchannel("A").tobytes()]
+
+
+def eye_dark_signature(image: Image.Image, body_box: tuple[int, int, int, int]) -> dict[tuple[int, int], tuple[int, int, int, int]]:
+    """Capture dark eye/visor pixels in the middle 40%-60% of the cat body."""
+    left, top, right, bottom = body_box
+    body_height = bottom - top + 1
+    start = top + int(body_height * 0.40)
+    end = min(bottom, top + int(body_height * 0.60))
+    pixels = image.load()
+    return {
+        (x, y): pixels[x, y]
+        for y in range(start, end + 1)
+        for x in range(left, right + 1)
+        if pixels[x, y][3] > 0 and pixels[x, y][0] <= 120 and pixels[x, y][1] <= 120 and pixels[x, y][2] <= 120
+    }
 
 
 def opening(mask: list[bool], width: int, height: int, radius: int) -> list[bool]:
@@ -267,11 +282,14 @@ def rekey(path: Path) -> tuple[float, tuple[int, int, int, int], list[tuple[int,
         raise ValueError(f"{path} lost its opaque body")
 
     if is_cat_frame(path):
+        eye_before = eye_dark_signature(image, body_box_after)
         band, glyph_pixels, body_delta, remaining = strip_glyph_band(image)
         if body_delta >= 0.02:
             raise ValueError(f"{path} top-band opening changed body area by {body_delta:.2%}")
         if remaining:
             raise ValueError(f"{path} retains thin top-band glyph shapes: {remaining}")
+        if eye_before != eye_dark_signature(image, body_box_after):
+            raise ValueError(f"{path} top-band opening changed dark eye-region pixels")
     else:
         band, glyph_pixels, body_delta, remaining = (0, 0), 0, 0.0, []
 
@@ -286,8 +304,8 @@ def main() -> None:
         type=Path,
         default=Path(__file__).resolve().parents[1] / "renderer" / "assets" / "pet" / "frames",
     )
-    parser.add_argument("--before-sheet", type=Path, default=Path("/tmp/t018d-before-contact-sheet.png"))
-    parser.add_argument("--after-sheet", type=Path, default=Path("/tmp/t018d-after-contact-sheet.png"))
+    parser.add_argument("--before-sheet", type=Path, default=Path("/tmp/t018e-before-contact-sheet.png"))
+    parser.add_argument("--after-sheet", type=Path, default=Path("/tmp/t018e-after-contact-sheet.png"))
     args = parser.parse_args()
     paths = sorted(args.frames_dir.glob("*.png"))
     if not paths:
@@ -304,7 +322,8 @@ def main() -> None:
     for path in paths:
         ratio, body_box, stripped, band, glyph_pixels, body_delta, remaining = rekey(path)
         image = Image.open(path).convert("RGBA")
-        after_entries.append((path.name, image, band))
+        display_band = band if is_cat_frame(path) else top_band(body_box, image.height)
+        after_entries.append((path.name, image, display_band))
         print(
             f"{path.name}\talpha0={ratio:.2%}\tbody={body_box}\tstripped={stripped}"
             f"\tband={band}\tglyphBandPx={glyph_pixels}\tbodyDelta={body_delta:.2%}\tremaining={remaining}"

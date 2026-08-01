@@ -638,3 +638,20 @@
 	- Reproducible state-machine simulation passed: (1) `thinking(tab key) -> done(conversation key)` queued one throw; (2) `done -> empty snapshot -> done` queued one; (3) `done -> hidden -> visible -> done snapshot` queued one; and (4) `done -> thinking -> done` queued two, as required for two distinct completions.
 - Remaining:
 	- Manual acceptance should complete one conversation while observing a tab-fallback to conversation-id upgrade and a reconnect, confirming one plane only; then start a new task in the same conversation and confirm its next completion throws one new plane.
+
+## T-018e
+- Date: 2026-08-01 (Asia/Shanghai)
+- Commit:
+	- this commit — remove residual glyph patch above right eye
+- Root cause and parameter choice:
+	- The T-018d top-band ended after the first 25% of body height, leaving the right-eye-above area outside the cleanup range. The remaining compact patch also survived the radius-1 opening. The all-frame in-memory trial confirmed the requested `0.40` body fraction and radius `2` are safe: the widest observed single-pass body-area change was `0.28%`, below the existing 2% failure threshold, and every protected dark eye signature stayed unchanged.
+- Changes:
+	- `desktop/scripts/rekey-pet-frames.py`: Synchronized the top glyph band to 40% of body height and square opening radius to 2px. Added a dark eye/visor signature over body rows 40%-60%; the script now fails if that signature changes before versus after top-band cleanup. The default QA paths now write `/tmp/t018e-before-contact-sheet.png` and `/tmp/t018e-after-contact-sheet.png`; after sheets retain a display band for skipped plane frames without applying cleanup to them.
+	- `desktop/renderer/renderer.js`: Matched the offline `TOP_GLYPH_BAND_BODY_FRACTION = 0.40` and `TOP_GLYPH_OPENING_RADIUS = 2` runtime fallback parameters. The existing floating-speck removal, keying, outline, and T-022 throw scheduler are otherwise untouched.
+	- `desktop/renderer/assets/pet/frames/*.png`: Reprocessed all 28 cat frames with the validated settings. The 8 `plane_*` and `plane_land_*` assets were skipped and have no diff.
+- QA and self test:
+	- Generated and inspected both required 4x contact sheets. The after sheet has no visible residual patch above the right eye; both eyes and ears remain intact, and paper-plane line work remains visible.
+	- Full offline processing passed all retained checks (body delta <2%, no thin glyph components) plus the new per-frame dark-eye-signature equality assertion. The resulting cat bands end at `y=89..108`, with protected eye rows immediately at or below that boundary; every one of the 28 frames reported zero eye-signature change.
+	- `node --check desktop/renderer/renderer.js`, `python3 -m py_compile desktop/scripts/rekey-pet-frames.py`, and `git diff --check` passed.
+- Remaining:
+	- Manual whole-machine validation should exercise idle/waiting/throw loops on the target desktop and confirm the right-eye-above patch no longer flickers while cards, drag, and the T-022 single-throw behavior remain normal.
