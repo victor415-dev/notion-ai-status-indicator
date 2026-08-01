@@ -672,3 +672,19 @@
 	- Electron GUI launch was not retried because T-019 recorded this host's external policy deleting `Electron.app` after launch. Manual target-machine checks remain required for hover visibility, smooth drag, restart persistence, edge clamping at 40px and 160px, and card/plane interaction.
 - Remaining:
 	- Manual acceptance should resize from the default to both limits, restart to confirm `pet-settings.json` restoration, and verify card layout, edge protection, click-through, reduced motion, done animation, and one-plane-per-completion behavior.
+
+## T-024
+- Date: 2026-08-01 (Asia/Shanghai)
+- Commit:
+	- this commit — anchor resize handle to cat body corner
+- Root cause:
+	- The handle was fixed to the transparent 192px frame's window corner. Scaling magnified the frame padding, moving the handle away from the cat. Crossing that padding hid the handle before its DOM hit target could be reached, while mouse-through was enabled.
+- Changes:
+	- `desktop/renderer/renderer.js`: `captureSpriteMask()` now stores the alpha-thresholded opaque bounding box with each sprite mask. The handle is recalculated after each sprite frame and pet-size application, scaled from that bbox and positioned at its bottom-right with a 4px overlap, clamped inside the pet element.
+	- `desktop/renderer/renderer.js`: Replaced handle DOM-hit-dependent visibility with an expanded 6px geometry tolerance. An opaque cat pixel, handle tolerance hit, or active resize keeps the handle visible and the pet window interactive. At sizes 100px and above, the handle is 18px; otherwise it remains 14px. No new per-frame logging was added.
+	- `desktop/renderer/styles.css`: Removed fixed `right`/`bottom` positioning so the renderer controls the handle with computed `left`/`top` values.
+- Self test:
+	- `node --check desktop/renderer/renderer.js` and `git diff --check` passed.
+	- Reproducible geometry assertions passed for bbox-based handle placement at 40px, 56px, and 160px, 4px overlap, 6px hit tolerance, bounds clamping, and 14px/18px size selection. T-023 main/preload persistence and T-022 throw scheduling were not modified.
+- Remaining:
+	- Manual acceptance should move from cat body to the handle at 160px and confirm no flicker or click-through, then verify resize persistence, cat click, card interactions, and one-plane completion behavior.

@@ -21,6 +21,8 @@ const MIN_PET_SIZE = 40;
 const MAX_PET_SIZE = 160;
 const LAYOUT_MARGIN = 8;
 const HIT_ALPHA_THRESHOLD = 16;
+const RESIZE_HANDLE_OVERLAP_PX = 4;
+const RESIZE_HANDLE_TOLERANCE_PX = 6;
 const SPRITE_WHITE_THRESHOLD = 235;
 const SPRITE_BACKGROUND_DELTA = 20;
 const FLOATING_SPECK_MAX_AREA = 400;
@@ -361,8 +363,23 @@ function captureSpriteMask(canvas, context) {
 	const { width, height } = canvas;
 	const { data } = context.getImageData(0, 0, width, height);
 	const alpha = new Uint8Array(width * height);
-	for (let pixel = 0; pixel < alpha.length; pixel += 1) alpha[pixel] = data[pixel * 4 + 3];
-	return { width, height, alpha };
+	let left = width;
+	let top = height;
+	let right = -1;
+	let bottom = -1;
+	for (let pixel = 0; pixel < alpha.length; pixel += 1) {
+		const opacity = data[pixel * 4 + 3];
+		alpha[pixel] = opacity;
+		if (opacity < HIT_ALPHA_THRESHOLD) continue;
+		const x = pixel % width;
+		const y = Math.floor(pixel / width);
+		left = Math.min(left, x);
+		top = Math.min(top, y);
+		right = Math.max(right, x);
+		bottom = Math.max(bottom, y);
+	}
+	const bbox = right >= left && bottom >= top ? { left, top, right, bottom } : null;
+	return { width, height, alpha, bbox };
 }
 
 function loadKeyedSprite(relPath) {
@@ -423,6 +440,7 @@ function setSpriteFrame(relPath) {
 			if (request !== spriteFrameRequest || petSpriteEl.getAttribute("src") === dataUrl) return;
 			currentSpriteMask = spriteFrameMasks.get(relPath) || null;
 			petSpriteEl.setAttribute("src", dataUrl);
+			positionResizeHandle();
 			updatePointerInteractivity(lastPointer);
 		})
 		.catch((error) => {
@@ -431,6 +449,7 @@ function setSpriteFrame(relPath) {
 			currentSpriteMask = null;
 			const fallback = `./${relPath}`;
 			if (petSpriteEl.getAttribute("src") !== fallback) petSpriteEl.setAttribute("src", fallback);
+			positionResizeHandle();
 			updatePointerInteractivity(lastPointer);
 		});
 }
@@ -441,6 +460,36 @@ function isOpaqueSpritePoint(mask, point, rect) {
 	const y = Math.floor((point.clientY - rect.top) * mask.height / rect.height);
 	if (x < 0 || x >= mask.width || y < 0 || y >= mask.height) return false;
 	return mask.alpha[y * mask.width + x] >= HIT_ALPHA_THRESHOLD;
+}
+
+function resizeHandleSize() {
+	return petSize >= 100 ? 18 : 14;
+}
+
+function positionResizeHandle() {
+	if (!resizeHandleEl || !currentSpriteMask || !currentSpriteMask.bbox || !petSpriteEl) return;
+	const rect = petSpriteEl.getBoundingClientRect();
+	if (!rect.width || !rect.height) return;
+	const handleSize = resizeHandleSize();
+	const bbox = currentSpriteMask.bbox;
+	const right = (bbox.right + 1) * rect.width / currentSpriteMask.width;
+	const bottom = (bbox.bottom + 1) * rect.height / currentSpriteMask.height;
+	const left = Math.min(Math.max(0, right - RESIZE_HANDLE_OVERLAP_PX - handleSize), Math.max(0, rect.width - handleSize));
+	const top = Math.min(Math.max(0, bottom - RESIZE_HANDLE_OVERLAP_PX - handleSize), Math.max(0, rect.height - handleSize));
+	resizeHandleEl.style.width = `${handleSize}px`;
+	resizeHandleEl.style.height = `${handleSize}px`;
+	resizeHandleEl.style.left = `${left}px`;
+	resizeHandleEl.style.top = `${top}px`;
+}
+
+function isOverResizeHandleTolerance(point) {
+	if (!resizeHandleEl || resizeHandleEl.hidden || !point) return false;
+	const rect = resizeHandleEl.getBoundingClientRect();
+	if (!rect.width || !rect.height) return false;
+	return point.clientX >= rect.left - RESIZE_HANDLE_TOLERANCE_PX
+		&& point.clientX <= rect.right + RESIZE_HANDLE_TOLERANCE_PX
+		&& point.clientY >= rect.top - RESIZE_HANDLE_TOLERANCE_PX
+		&& point.clientY <= rect.bottom + RESIZE_HANDLE_TOLERANCE_PX;
 }
 
 function setPetMouseIgnore(ignore) {
@@ -455,11 +504,10 @@ function updatePointerInteractivity(point) {
 		lastPointer = { clientX: point.clientX, clientY: point.clientY };
 		const target = document.elementFromPoint(point.clientX, point.clientY);
 		const control = target && target.closest && target.closest(".card, #collapse, #badge, #resize-handle");
-		const inPet = target && target.closest && target.closest("#pet");
-		const interactive = Boolean(control) || (Boolean(inPet) && isOpaqueSpritePoint(currentSpriteMask, point, petSpriteEl.getBoundingClientRect()));
+		const overOpaquePet = Boolean(currentSpriteMask && isOpaqueSpritePoint(currentSpriteMask, point, petSpriteEl.getBoundingClientRect()));
+		const overResizeHandle = isOverResizeHandleTolerance(point);
+		const interactive = Boolean(control) || overOpaquePet || overResizeHandle;
 		if (resizeHandleEl) {
-			const overResizeHandle = target && target.closest && target.closest("#resize-handle");
-			const overOpaquePet = Boolean(currentSpriteMask && inPet && isOpaqueSpritePoint(currentSpriteMask, point, petSpriteEl.getBoundingClientRect()));
 			resizeHandleEl.hidden = Boolean(resizeDrag) ? false : !Boolean(overResizeHandle || overOpaquePet);
 		}
 		if (drag || resizeDrag) {
@@ -747,6 +795,7 @@ function applyPetSize(nextSize) {
 		petSpriteEl.style.width = `${petSize}px`;
 		petSpriteEl.style.height = `${petSize}px`;
 	}
+	positionResizeHandle();
 }
 
 function computeSize(cardCount, showArrow, showBadge) {

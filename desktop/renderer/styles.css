@@ -75,8 +75,6 @@ html, body {
 
 .resize-handle {
 	position: absolute;
-	right: 1px;
-	bottom: 1px;
 	width: 14px;
 	height: 14px;
 	padding: 0;
