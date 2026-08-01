@@ -22,6 +22,10 @@ FLOATING_SPECK_MAX_HEIGHT = 20
 TOP_BAND_UPWARD_PADDING = 10
 TOP_BAND_BODY_FRACTION = 0.40
 TOP_BAND_OPENING_RADIUS = 2
+MINORITY_STABLE_RATIO = 0.60
+MINORITY_OUTSIDE_RATIO = 0.70
+MINORITY_MAX_AREA = 300
+MINORITY_BODY_FRACTION = 0.60
 
 
 def median(values: list[int]) -> int:
@@ -49,14 +53,14 @@ def is_background(pixel: tuple[int, int, int, int], background: tuple[int, int, 
     return near_white or near_corner
 
 
-def opaque_components(image: Image.Image) -> list[tuple[list[tuple[int, int]], tuple[int, int, int, int]]]:
+def opaque_components(image: Image.Image, alpha_threshold: int = 1) -> list[tuple[list[tuple[int, int]], tuple[int, int, int, int]]]:
     width, height = image.size
     pixels = image.load()
     seen: set[tuple[int, int]] = set()
     components: list[tuple[list[tuple[int, int]], tuple[int, int, int, int]]] = []
     for y in range(height):
         for x in range(width):
-            if (x, y) in seen or pixels[x, y][3] == 0:
+            if (x, y) in seen or pixels[x, y][3] < alpha_threshold:
                 continue
             queue: deque[tuple[int, int]] = deque([(x, y)])
             seen.add((x, y))
@@ -67,7 +71,7 @@ def opaque_components(image: Image.Image) -> list[tuple[list[tuple[int, int]], t
                 for next_x, next_y in ((point_x - 1, point_y), (point_x + 1, point_y), (point_x, point_y - 1), (point_x, point_y + 1)):
                     if not (0 <= next_x < width and 0 <= next_y < height):
                         continue
-                    if (next_x, next_y) in seen or pixels[next_x, next_y][3] == 0:
+                    if (next_x, next_y) in seen or pixels[next_x, next_y][3] < alpha_threshold:
                         continue
                     seen.add((next_x, next_y))
                     queue.append((next_x, next_y))
@@ -216,7 +220,62 @@ def is_cat_frame(path: Path) -> bool:
     return not path.name.startswith("plane_")
 
 
-def save_contact_sheet(entries: list[tuple[str, Image.Image, tuple[int, int]]], output: Path) -> None:
+def frame_state(path: Path) -> str:
+    return path.name.split("_", 1)[0]
+
+
+def stable_alpha_mask(images: list[Image.Image]) -> list[bool]:
+    if not images:
+        return []
+    alpha_planes = [image.getchannel("A").tobytes() for image in images]
+    threshold = ceil(len(images) * MINORITY_STABLE_RATIO)
+    return [sum(plane[pixel] >= 16 for plane in alpha_planes) >= threshold for pixel in range(len(alpha_planes[0]))]
+
+
+def minority_blobs(image: Image.Image, stable: list[bool]) -> list[tuple[list[tuple[int, int]], tuple[int, int, int, int]]]:
+    width, height = image.size
+    components = opaque_components(image, 16)
+    if not components:
+        return []
+    body_box = components[0][1]
+    body_limit = body_box[1] + int((body_box[3] - body_box[1] + 1) * MINORITY_BODY_FRACTION)
+    hits = []
+    for points, box in components[1:]:
+        if len(points) > MINORITY_MAX_AREA or box[3] > body_limit:
+            continue
+        outside = sum(not stable[y * width + x] for x, y in points) / max(1, len(points))
+        if outside >= MINORITY_OUTSIDE_RATIO:
+            hits.append((points, box))
+    return hits
+
+
+def apply_minority_vote(images_by_state: dict[str, list[tuple[Path, Image.Image]]]) -> list[tuple[str, str, int, tuple[int, int, int, int]]]:
+    reports = []
+    for state, entries in images_by_state.items():
+        images = [image for _, image in entries]
+        stable = stable_alpha_mask(images)
+        for path, image in entries:
+            hits = minority_blobs(image, stable)
+            pixels = image.load()
+            for points, box in hits:
+                for x, y in points:
+                    pixels[x, y] = (0, 0, 0, 0)
+                reports.append((state, path.name, len(points), box))
+    return reports
+
+
+def assert_no_minority_blobs(images_by_state: dict[str, list[tuple[Path, Image.Image]]]) -> None:
+    remaining = []
+    for state, entries in images_by_state.items():
+        stable = stable_alpha_mask([image for _, image in entries])
+        for path, image in entries:
+            for points, box in minority_blobs(image, stable):
+                remaining.append((state, path.name, len(points), box))
+    if remaining:
+        raise ValueError(f"minority blobs remain after vote: {remaining}")
+
+
+def save_contact_sheet(entries: list[tuple[str, Image.Image, tuple[int, int]]], output: Path, annotations: dict[str, str] | None = None) -> None:
     """Write four-times top-band crops for direct before/after comparison."""
     scale = 4
     cell_width = 192 * scale
@@ -233,7 +292,8 @@ def save_contact_sheet(entries: list[tuple[str, Image.Image, tuple[int, int]]], 
         cell_y = (index // columns) * cell_height
         sheet.alpha_composite(crop, (cell_x, cell_y))
         draw.rectangle((cell_x, cell_y, cell_x + cell_width - 1, cell_y + cell_height - 1), outline=(220, 38, 38, 255), width=1)
-        draw.text((cell_x + 4, cell_y + 4), f"{name} y={band[0]}..{band[1]}", fill=(20, 24, 32, 255))
+        annotation = f" {annotations[name]}" if annotations and name in annotations else ""
+        draw.text((cell_x + 4, cell_y + 4), f"{name} y={band[0]}..{band[1]}{annotation}", fill=(20, 24, 32, 255))
     sheet.convert("RGB").save(output)
 
 
@@ -304,8 +364,8 @@ def main() -> None:
         type=Path,
         default=Path(__file__).resolve().parents[1] / "renderer" / "assets" / "pet" / "frames",
     )
-    parser.add_argument("--before-sheet", type=Path, default=Path("/tmp/t018e-before-contact-sheet.png"))
-    parser.add_argument("--after-sheet", type=Path, default=Path("/tmp/t018e-after-contact-sheet.png"))
+    parser.add_argument("--before-sheet", type=Path, default=Path("/tmp/t018f-before-contact-sheet.png"))
+    parser.add_argument("--after-sheet", type=Path, default=Path("/tmp/t018f-after-contact-sheet.png"))
     args = parser.parse_args()
     paths = sorted(args.frames_dir.glob("*.png"))
     if not paths:
@@ -319,16 +379,51 @@ def main() -> None:
     save_contact_sheet(before_entries, args.before_sheet)
 
     after_entries = []
+    images_by_state: dict[str, list[tuple[Path, Image.Image]]] = {}
+    eye_signatures: dict[str, tuple[tuple[int, int, int, int], dict[tuple[int, int], tuple[int, int, int, int]]] ] = {}
+    body_areas: dict[str, int] = {}
     for path in paths:
         ratio, body_box, stripped, band, glyph_pixels, body_delta, remaining = rekey(path)
         image = Image.open(path).convert("RGBA")
+        if is_cat_frame(path):
+            images_by_state.setdefault(frame_state(path), []).append((path, image))
+            eye_signatures[path.name] = (body_box, eye_dark_signature(image, body_box))
+            body_areas[path.name] = len(opaque_components(image)[0][0])
         display_band = band if is_cat_frame(path) else top_band(body_box, image.height)
         after_entries.append((path.name, image, display_band))
         print(
             f"{path.name}\talpha0={ratio:.2%}\tbody={body_box}\tstripped={stripped}"
             f"\tband={band}\tglyphBandPx={glyph_pixels}\tbodyDelta={body_delta:.2%}\tremaining={remaining}"
         )
-    save_contact_sheet(after_entries, args.after_sheet)
+    reports = apply_minority_vote(images_by_state)
+    report_by_name: dict[str, list[str]] = {}
+    for state, name, area, box in reports:
+        report_by_name.setdefault(name, []).append(f"blob={area}@{box}")
+        print(f"minority\t{state}\t{name}\tarea={area}\tbox={box}")
+
+    for state, entries in images_by_state.items():
+        for path, image in entries:
+            body_box = opaque_components(image)[0][1]
+            before_box, before_eye = eye_signatures[path.name]
+            before_area = body_areas[path.name]
+            after_eye = eye_dark_signature(image, before_box)
+            after_area = len(opaque_components(image)[0][0])
+            body_delta = (before_area - after_area) / max(1, before_area)
+            if body_delta >= 0.02:
+                raise ValueError(f"{path} minority vote changed body area by {body_delta:.2%}")
+            if before_eye != after_eye:
+                raise ValueError(f"{path} minority vote changed dark eye-region pixels")
+            image.save(path)
+
+    assert_no_minority_blobs(images_by_state)
+    after_entries = []
+    for path in paths:
+        image = Image.open(path).convert("RGBA")
+        components = opaque_components(image)
+        body_box = components[0][1] if components else (0, 0, 0, 0)
+        after_entries.append((path.name, image, top_band(body_box, image.height)))
+    annotations = {name: ";".join(values) for name, values in report_by_name.items()}
+    save_contact_sheet(after_entries, args.after_sheet, annotations)
 
 
 if __name__ == "__main__":

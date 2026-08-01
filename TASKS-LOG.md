@@ -688,3 +688,19 @@
 	- Reproducible geometry assertions passed for bbox-based handle placement at 40px, 56px, and 160px, 4px overlap, 6px hit tolerance, bounds clamping, and 14px/18px size selection. T-023 main/preload persistence and T-022 throw scheduling were not modified.
 - Remaining:
 	- Manual acceptance should move from cat body to the handle at 160px and confirm no flicker or click-through, then verify resize persistence, cat click, card interactions, and one-plane completion behavior.
+
+## T-018f
+- Date: 2026-08-01 (Asia/Shanghai)
+- Commit:
+	- this commit — cross-frame minority blob cleanup near right eye
+- Root cause and evidence:
+	- The remaining intermittent black mark is neither a disconnected top speck nor a safe target for the eye-adjacent morphological opening. A read-only cross-frame alpha-component scan found one minority-only candidate: `hover_03.png`, area `5px`, box `(54,112)-(54,116)`, with 100% of its pixels outside the hover-state majority mask. This matches a frame-local artifact rather than a stable cat feature.
+- Changes:
+	- `desktop/scripts/rekey-pet-frames.py`: Added the reproducible cat-only vote pass. Frames are grouped by `idle_`, `hover_`, `wait_`, `throw_`, and `done_`; a pixel is stable at alpha `>=16` when it appears in at least 60% of its state frames. The pass clears only non-largest components of area `<=300px` whose bottom remains within the largest body's top 60% and whose pixels are at least 70% outside that state mask. It runs after the existing floating-speck and top-band cleanup, then fails if any matching minority component remains. Plane frames remain excluded.
+	- `desktop/renderer/assets/pet/frames/*.png`: Re-ran the offline pipeline. The validated `hover_03` 5px candidate was removed; a repeat run reports no remaining minority candidates. Existing top-band cleanup also made idempotent small removals in the previously affected cat frames. No plane frame changed.
+	- `desktop/renderer/renderer.js`: Added a non-blocking runtime equivalent. It preloads each cat state through the existing keyed-frame cache, skips an incomplete state with `[NAI-PET] minority vote skipped`, removes only the same minority component class from cached data URLs and masks, and logs one `[NAI-PET] stripped minority blobs n=<count> <state>` summary when it changes a state. Initial frame display and the existing `stripFloatingSpecks -> stripTopBandGlyphs -> keySpriteBackground -> outlineSprite` order are preserved.
+- QA and self test:
+	- Generated and visually inspected `/tmp/t018f-before-contact-sheet.png` and `/tmp/t018f-after-contact-sheet.png` at 4x. The cat's ears, helmet, eye/visor region, chest, and antenna details remain intact; no detached right-eye/forehead patch is visible. Plane line art is untouched.
+	- `python3 -m py_compile desktop/scripts/rekey-pet-frames.py`, `python3 desktop/scripts/rekey-pet-frames.py`, `node --check desktop/renderer/renderer.js`, and `git diff --check` passed. Full-frame processing retained all dark eye signatures and kept every recorded body-area change below 2%; the final vote assertion found zero residual minority blobs.
+- Remaining:
+	- Manual target-desktop verification should run idle, hover, waiting, and throw loops for at least 60 seconds at an enlarged pet size, confirming the right-eye/forehead mark never flickers while card, resize-handle, click-through, and one-plane-per-completion behavior remain intact.

@@ -30,6 +30,10 @@ const FLOATING_SPECK_MAX_HEIGHT = 20;
 const TOP_GLYPH_BAND_UPWARD_PADDING = 10;
 const TOP_GLYPH_BAND_BODY_FRACTION = 0.40;
 const TOP_GLYPH_OPENING_RADIUS = 2;
+const MINORITY_STABLE_RATIO = 0.60;
+const MINORITY_OUTSIDE_RATIO = 0.70;
+const MINORITY_MAX_AREA = 300;
+const MINORITY_BODY_FRACTION = 0.60;
 
 const RANK = { thinking: 0, responding: 0, done: 1, idle: 2 };
 
@@ -65,6 +69,7 @@ let spriteThrowTimer = 0;
 let spriteDoneTimer = 0;
 let spriteDoneUntil = 0;
 let activeThrow = null; // { key, conversationId, tabId, title, spawned }
+let currentSpriteRelPath = "";
 const throwQueue = [];
 const queuedThrowKeys = new Set();
 const thrownKeys = new Set();
@@ -382,6 +387,143 @@ function captureSpriteMask(canvas, context) {
 	return { width, height, alpha, bbox };
 }
 
+function minorityMaskComponents(mask) {
+	const { width, height, alpha } = mask;
+	const visited = new Uint8Array(width * height);
+	const components = [];
+	for (let start = 0; start < alpha.length; start += 1) {
+		if (visited[start] || alpha[start] < HIT_ALPHA_THRESHOLD) continue;
+		const queue = [start];
+		visited[start] = 1;
+		const pixels = [];
+		let left = width;
+		let top = height;
+		let right = -1;
+		let bottom = -1;
+		for (let head = 0; head < queue.length; head += 1) {
+			const pixel = queue[head];
+			const x = pixel % width;
+			const y = Math.floor(pixel / width);
+			pixels.push(pixel);
+			left = Math.min(left, x);
+			top = Math.min(top, y);
+			right = Math.max(right, x);
+			bottom = Math.max(bottom, y);
+			for (const [offsetX, offsetY] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+				const nextX = x + offsetX;
+				const nextY = y + offsetY;
+				if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height) continue;
+				const next = nextY * width + nextX;
+				if (visited[next] || alpha[next] < HIT_ALPHA_THRESHOLD) continue;
+				visited[next] = 1;
+				queue.push(next);
+			}
+		}
+		components.push({ pixels, left, top, right, bottom });
+	}
+	return components.sort((first, second) => second.pixels.length - first.pixels.length);
+}
+
+function minorityStableMask(masks) {
+	if (!masks.length) return null;
+	const { width, height } = masks[0];
+	if (masks.some((mask) => mask.width !== width || mask.height !== height)) return null;
+	const stable = new Uint8Array(width * height);
+	const threshold = Math.ceil(masks.length * MINORITY_STABLE_RATIO);
+	for (let pixel = 0; pixel < stable.length; pixel += 1) {
+		let opaque = 0;
+		for (const mask of masks) {
+			if (mask.alpha[pixel] >= HIT_ALPHA_THRESHOLD) opaque += 1;
+		}
+		if (opaque >= threshold) stable[pixel] = 1;
+	}
+	return stable;
+}
+
+function findMinorityBlobs(mask, stable) {
+	const components = minorityMaskComponents(mask);
+	if (!components.length || !stable) return [];
+	const body = components[0];
+	const bodyLimit = body.top + Math.floor((body.bottom - body.top + 1) * MINORITY_BODY_FRACTION);
+	return components.slice(1).filter((component) => {
+		if (component.pixels.length > MINORITY_MAX_AREA || component.bottom > bodyLimit) return false;
+		const outside = component.pixels.reduce((count, pixel) => count + (stable[pixel] ? 0 : 1), 0);
+		return outside / component.pixels.length >= MINORITY_OUTSIDE_RATIO;
+	});
+}
+
+function rewriteMinoritySprite(relPath, pixels) {
+	const source = spriteFrameDataUrls.get(relPath);
+	if (!source || !pixels.length) return Promise.resolve(false);
+	return new Promise((resolve, reject) => {
+		const image = new Image();
+		image.onload = () => {
+			try {
+				const canvas = document.createElement("canvas");
+				canvas.width = image.naturalWidth || 192;
+				canvas.height = image.naturalHeight || 192;
+				const context = canvas.getContext("2d", { willReadFrequently: true });
+				if (!context) throw new Error("2d canvas unavailable");
+				context.drawImage(image, 0, 0, canvas.width, canvas.height);
+				const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+				for (const pixel of pixels) imageData.data[pixel * 4 + 3] = 0;
+				context.putImageData(imageData, 0, 0);
+				const dataUrl = canvas.toDataURL("image/png");
+				spriteFrameDataUrls.set(relPath, dataUrl);
+				const mask = captureSpriteMask(canvas, context);
+				spriteFrameMasks.set(relPath, mask);
+				if (currentSpriteRelPath === relPath && petSpriteEl) {
+					currentSpriteMask = mask;
+					petSpriteEl.setAttribute("src", dataUrl);
+					positionResizeHandle();
+					updatePointerInteractivity(lastPointer);
+				}
+				resolve(true);
+			} catch (error) {
+				reject(error);
+			}
+		};
+		image.onerror = () => reject(new Error("minority sprite rewrite load failed"));
+		image.src = source;
+	});
+}
+
+async function preloadAndCleanMinoritySprites() {
+	for (const state of ["idle", "hover", "waiting", "throw", "done"]) {
+		const paths = [...new Set(spriteFrames(state))];
+		if (!paths.length) continue;
+		let dataUrls;
+		try {
+			dataUrls = await Promise.all(paths.map((path) => loadKeyedSprite(path)));
+		} catch (error) {
+			console.warn("[NAI-PET] minority vote skipped", state, error && (error.stack || error.message || String(error)));
+			continue;
+		}
+		if (dataUrls.some((dataUrl) => !dataUrl) || paths.some((path) => !spriteFrameMasks.has(path))) {
+			console.warn("[NAI-PET] minority vote skipped", state, "frame missing");
+			continue;
+		}
+		const masks = paths.map((path) => spriteFrameMasks.get(path));
+		const stable = minorityStableMask(masks);
+		if (!stable) {
+			console.warn("[NAI-PET] minority vote skipped", state, "incompatible masks");
+			continue;
+		}
+		let stripped = 0;
+		for (const path of paths) {
+			const hits = findMinorityBlobs(spriteFrameMasks.get(path), stable);
+			if (!hits.length) continue;
+			const pixels = hits.flatMap((hit) => hit.pixels);
+			try {
+				if (await rewriteMinoritySprite(path, pixels)) stripped += hits.length;
+			} catch (error) {
+				console.warn("[NAI-PET] minority vote skipped", state, error && (error.stack || error.message || String(error)));
+			}
+		}
+		if (stripped) console.info("[NAI-PET] stripped minority blobs", `n=${stripped}`, state);
+	}
+}
+
 function loadKeyedSprite(relPath) {
 	if (spriteFrameDataUrls.has(relPath)) return Promise.resolve(spriteFrameDataUrls.get(relPath));
 	if (spriteFrameLoads.has(relPath)) return spriteFrameLoads.get(relPath);
@@ -437,14 +579,16 @@ function setSpriteFrame(relPath) {
 	const request = ++spriteFrameRequest;
 	loadKeyedSprite(relPath)
 		.then((dataUrl) => {
-			if (request !== spriteFrameRequest || petSpriteEl.getAttribute("src") === dataUrl) return;
+			if (request !== spriteFrameRequest) return;
+			currentSpriteRelPath = relPath;
 			currentSpriteMask = spriteFrameMasks.get(relPath) || null;
-			petSpriteEl.setAttribute("src", dataUrl);
+			if (petSpriteEl.getAttribute("src") !== dataUrl) petSpriteEl.setAttribute("src", dataUrl);
 			positionResizeHandle();
 			updatePointerInteractivity(lastPointer);
 		})
 		.catch((error) => {
 			if (request !== spriteFrameRequest) return;
+			currentSpriteRelPath = relPath;
 			console.warn("[NAI-PET] sprite pipeline failed", relPath, error && (error.stack || error.message || String(error)));
 			currentSpriteMask = null;
 			const fallback = `./${relPath}`;
@@ -1197,6 +1341,9 @@ if (window.naiBridge && typeof window.naiBridge.getPetSize === "function") {
 }
 if (spriteReady) {
 	setSpriteFrame(spriteFrames("idle")[0] || frameRel(SPRITE_FALLBACKS.idle));
+	preloadAndCleanMinoritySprites().catch((error) => {
+		console.warn("[NAI-PET] minority vote failed", error && (error.stack || error.message || String(error)));
+	});
 	pumpThrowQueue();
 	updateSpriteState(true);
 } else {
