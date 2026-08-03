@@ -40,6 +40,132 @@ function tangent(p0, p1, p2, t) {
 	};
 }
 
+function easeIn(t) {
+	return t * t;
+}
+
+function easeOut(t) {
+	return 1 - (1 - t) * (1 - t);
+}
+
+function clampFlightAngle(angle) {
+	return Math.max(-35, Math.min(35, angle));
+}
+
+function angleFromTangent(vector) {
+	return Math.atan2(vector.y, vector.x) * 180 / Math.PI;
+}
+
+function shortestAngleDelta(from, to) {
+	return ((to - from + 540) % 360) - 180;
+}
+
+function smoothSegmentAngle(rec, phase, targetAngle, now) {
+	if (rec.rotationPhase !== phase) {
+		rec.rotationPhase = phase;
+		rec.rotationBlend = { from: Number.isFinite(rec.rotation) ? rec.rotation : targetAngle, startedAt: now };
+	}
+	const blend = rec.rotationBlend;
+	if (blend) {
+		const progress = Math.min(1, Math.max(0, (now - blend.startedAt) / 120));
+		const angle = blend.from + shortestAngleDelta(blend.from, targetAngle) * progress;
+		if (progress >= 1) rec.rotationBlend = null;
+		rec.rotation = angle;
+		return angle;
+	}
+	rec.rotation = targetAngle;
+	return targetAngle;
+}
+
+function setFlightTransform(rec, pos, angle) {
+	rec.el.style.transform = `translate3d(${pos.x}px, ${pos.y}px, 0) translate(-50%, -50%) rotate(${angle}deg)`;
+}
+
+function finishFlight(rec, now) {
+	rec.landed = true;
+	rec.landedAt = now;
+	rec.el.classList.add("is-landed");
+	rec.el.style.pointerEvents = "auto";
+	rec.el.style.cursor = "pointer";
+	if (rec.el.matches(":hover")) {
+		rec.hovered = true;
+		window.naiBridge.planeInteractive({ id: rec.id, active: true });
+	}
+}
+
+function hasLoopTrajectory(loop) {
+	return Boolean(loop)
+		&& [loop.cx, loop.cy, loop.rx, loop.ry, loop.entryAngle, loop.launchMs, loop.loopMs, loop.landMs]
+			.every(Number.isFinite)
+		&& loop.rx > 0
+		&& loop.ry > 0
+		&& loop.launchMs > 0
+		&& loop.loopMs > 0
+		&& loop.landMs > 0
+		&& (loop.direction === 1 || loop.direction === -1);
+}
+
+function updateLoopPlane(rec, now) {
+	const elapsed = Math.max(0, now - rec.startedAt);
+	const { loop } = rec;
+	const entry = {
+		x: loop.cx + loop.rx * Math.cos(loop.entryAngle),
+		y: loop.cy + loop.ry * Math.sin(loop.entryAngle),
+	};
+	const entryTangent = {
+		x: -loop.direction * loop.rx * Math.sin(loop.entryAngle),
+		y: loop.direction * loop.ry * Math.cos(loop.entryAngle),
+	};
+	const tangentLength = Math.hypot(entryTangent.x, entryTangent.y) || 1;
+	const totalDuration = loop.launchMs + loop.loopMs + loop.landMs;
+	let pos;
+	let angle;
+	let phase;
+
+	if (elapsed < loop.launchMs) {
+		const progress = easeIn(elapsed / loop.launchMs);
+		const control = {
+			x: (rec.start.x + entry.x) / 2,
+			y: (rec.start.y + entry.y) / 2 - 60,
+		};
+		pos = bezier(rec.start, control, entry, progress);
+		angle = clampFlightAngle(angleFromTangent(tangent(rec.start, control, entry, progress)));
+		phase = "launch";
+	} else if (elapsed < loop.launchMs + loop.loopMs) {
+		const progress = (elapsed - loop.launchMs) / loop.loopMs;
+		const angleRadians = loop.entryAngle + loop.direction * Math.PI * 2 * progress;
+		pos = {
+			x: loop.cx + loop.rx * Math.cos(angleRadians),
+			y: loop.cy + loop.ry * Math.sin(angleRadians),
+		};
+		const entryAngle = angleFromTangent(entryTangent);
+		angle = entryAngle + loop.direction * 360 * progress;
+		phase = "loop";
+	} else {
+		const progress = Math.min(1, (elapsed - loop.launchMs - loop.loopMs) / loop.landMs);
+		const easedProgress = easeOut(progress);
+		const control = {
+			x: entry.x + entryTangent.x / tangentLength * 84,
+			y: entry.y + entryTangent.y / tangentLength * 84,
+		};
+		pos = bezier(entry, control, rec.end, easedProgress);
+		angle = clampFlightAngle(angleFromTangent(tangent(entry, control, rec.end, easedProgress))) * (1 - easedProgress);
+		phase = "land";
+	}
+
+	setFlightTransform(rec, pos, smoothSegmentAngle(rec, phase, angle, now));
+	const frames = spriteMap && spriteMap.states && Array.isArray(spriteMap.states.plane) ? spriteMap.states.plane : [];
+	const frameMs = (spriteMap && spriteMap.frameMs && spriteMap.frameMs.plane) || 110;
+	if (frames.length) {
+		const src = frames[Math.floor(elapsed / frameMs) % frames.length] || frames[0];
+		if (src) setFrame(rec, src.split("/").pop().replace(/\.png$/, ""));
+	}
+	if (elapsed >= totalDuration) {
+		setFlightTransform(rec, rec.end, 0);
+		finishFlight(rec, now);
+	}
+}
+
 function removePlane(id) {
 	const rec = planes.get(id);
 	if (!rec) return;
@@ -60,6 +186,10 @@ function clearPlanes() {
 }
 
 function updatePlane(rec, now) {
+	if (!rec.landed && hasLoopTrajectory(rec.loop)) {
+		updateLoopPlane(rec, now);
+		return;
+	}
 	const elapsed = now - rec.startedAt;
 	const progress = Math.min(1, Math.max(0, elapsed / rec.duration));
 	if (!rec.landed) {
@@ -134,6 +264,7 @@ function addPlane(payload) {
 		control: payload.control || { x: 0, y: 0 },
 		end: payload.end || { x: 0, y: 0 },
 		duration: Number(payload.duration) || 550,
+		loop: payload.loop || null,
 		startedAt: performance.now(),
 		landed: false,
 		landedAt: 0,

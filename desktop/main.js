@@ -490,7 +490,29 @@ function spawnPlaneFromPet(payload) {
 		x: Math.round((start.x + end.x) / 2 + (Math.random() * 120 - 60)),
 		y: Math.round(Math.min(start.y, end.y) - 70 - Math.random() * 70),
 	};
-	const duration = 450 + Math.round(Math.random() * 250);
+	const wa = getPetWorkArea();
+	const cx = wa.x + wa.width / 2;
+	const cy = wa.y + wa.height / 2;
+	const maxRx = Math.max(1, wa.width / 2 - 24);
+	const maxRy = Math.max(1, wa.height / 2 - 24);
+	const rx = Math.min(maxRx, wa.width * (0.30 + Math.random() * 0.08));
+	const ry = Math.min(maxRy, wa.height * (0.28 + Math.random() * 0.08));
+	const direction = Math.random() < 0.5 ? 1 : -1;
+	const entryAngle = Math.atan2((start.y - cy) / ry, (start.x - cx) / rx);
+	const launchMs = 350 + Math.round(Math.random() * 150);
+	const loopMs = 1400 + Math.round(Math.random() * 400);
+	const landMs = 350 + Math.round(Math.random() * 150);
+	const duration = launchMs + loopMs + landMs;
+	const loop = { cx, cy, rx, ry, direction, entryAngle, launchMs, loopMs, landMs };
+	console.log(
+		"[NAI-PET] plane loop",
+		`cx=${Math.round(cx)}`,
+		`cy=${Math.round(cy)}`,
+		`rx=${Math.round(rx)}`,
+		`ry=${Math.round(ry)}`,
+		`dir=${direction}`,
+		`total=${duration}ms`,
+	);
 	const planeId = `plane-${Date.now()}-${++planeSeq}`;
 	const plane = {
 		id: planeId,
@@ -501,6 +523,7 @@ function spawnPlaneFromPet(payload) {
 		control,
 		end,
 		duration,
+		loop,
 		releaseFrame: Number.isFinite(payload && payload.releaseFrame) ? Number(payload.releaseFrame) : 5,
 	};
 	activePlanes.set(planeId, plane);

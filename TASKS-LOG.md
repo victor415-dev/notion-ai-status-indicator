@@ -704,3 +704,17 @@
 	- `python3 -m py_compile desktop/scripts/rekey-pet-frames.py`, `python3 desktop/scripts/rekey-pet-frames.py`, `node --check desktop/renderer/renderer.js`, and `git diff --check` passed. Full-frame processing retained all dark eye signatures and kept every recorded body-area change below 2%; the final vote assertion found zero residual minority blobs.
 - Remaining:
 	- Manual target-desktop verification should run idle, hover, waiting, and throw loops for at least 60 seconds at an enlarged pet size, confirming the right-eye/forehead mark never flickers while card, resize-handle, click-through, and one-plane-per-completion behavior remain intact.
+
+## T-026
+- Date: 2026-08-03 (Asia/Shanghai)
+- Commit:
+	- this commit — looping arc flight for thrown planes
+- Changes:
+	- `desktop/main.js`: `spawnPlaneFromPet()` keeps the existing `start`, `control`, `end`, and `duration` fields, then adds a per-plane `loop` payload. The loop is an ellipse centered on the active work area with randomized 30%-38%/28%-36% radii clamped to retain a 24px edge margin, a random clockwise/counterclockwise direction, entry angle derived from the pet launch point, and `launchMs`/`loopMs`/`landMs` ranges of 350-500ms, 1400-1800ms, and 350-500ms. `duration` is now their sum, and spawn logs `[NAI-PET] plane loop` with geometry, direction, and total time.
+	- `desktop/renderer/planes.js`: Added a loop-only three-stage trajectory: eased quadratic launch into the ellipse, one full constant-angular-velocity orbit, then an eased tangent-led quadratic landing. Loop rotation follows the unrestricted ellipse tangent, while launch/landing tangent angles are clamped to +/-35 degrees and segment changes blend for 120ms; landing returns to 0 degrees. Flight sprite frames now loop by elapsed time using `frameMs.plane`; landing frames and all click/hover/remove behavior are unchanged. Payloads without `loop` return immediately to the untouched legacy single-Bézier path.
+- Self test:
+	- `node --check desktop/main.js`, `node --check desktop/renderer/planes.js`, and `git diff --check` passed.
+	- Reproducible numeric trajectory simulation passed: the ellipse point at loop entry matched the launch endpoint, the point after 360 degrees closed back to the same entry point within 1px, and time-based plane frames wrapped as expected.
+	- `cd desktop && npm start` launched Electron successfully. Renderer startup keyed every pet frame with no pipeline error. A separate local WebSocket test sent an isolated `thinking -> done` snapshot for `t026-local-flight`, retained the done snapshot for longer than the maximum 2.8s flight, and completed without connection or renderer error. It did not access a browser tab or a real Notion conversation.
+- Remaining:
+	- Manual desktop acceptance should observe a completed task through launch, one full screen orbit, decelerated landing, click-to-focus removal, and two overlapping completions with independently varied loop directions and landing points.
