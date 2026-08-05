@@ -718,3 +718,19 @@
 	- `cd desktop && npm start` launched Electron successfully. Renderer startup keyed every pet frame with no pipeline error. A separate local WebSocket test sent an isolated `thinking -> done` snapshot for `t026-local-flight`, retained the done snapshot for longer than the maximum 2.8s flight, and completed without connection or renderer error. It did not access a browser tab or a real Notion conversation.
 - Remaining:
 	- Manual desktop acceptance should observe a completed task through launch, one full screen orbit, decelerated landing, click-to-focus removal, and two overlapping completions with independently varied loop directions and landing points.
+
+## T-027
+- Date: 2026-08-05 (Asia/Shanghai)
+- Commit:
+	- this commit — physics-based paper plane flight
+- Changes:
+	- `desktop/main.js`: Each spawned plane now receives an additive `flight` payload with an independently randomized horizontal direction, 10-35 degree initial pitch, 500-800px/s initial speed, 320-420px/s trim speed, 0.15-0.25 drag, 810-990px/s2 gravity, and a 6000ms maximum flight time. A leftward throw starts symmetrically from the cat's left side. The prior `loop`, `start`, `control`, `end`, and `duration` fields remain intact as compatibility fallbacks. Added an additive inflated `petBounds` payload for renderer-side landing-slide avoidance and changed the spawn trace to `[NAI-PET] plane flight dir=... theta0=... v0=... vt=... kDrag=...`.
+	- `desktop/renderer/planes.js`: Added a strictly validated physics path with highest update priority. Every rAF integrates the specified phugoid equations using a `<=32ms` timestep, 40px/s speed floor, top-edge pitch suppression, and 350ms cosine-eased left/right turnbacks at the 100px side margins. The sprite's angle follows its actual velocity with the existing 120ms segment smoothing around turns.
+	- `desktop/renderer/planes.js`: Added immediate bottom contact and 6000ms forced descent, then a 250ms 80-160px ease-out skid that returns the nose to 0 degrees. Skid endpoints avoid the inflated cat rectangle and are clamped to the work-area bounds. Existing post-landing pointer, hover, click, removal, visibility, and `planeLand` behavior remain unchanged. Plane flight frames retain T-026's time-based looping. `flight` absent falls through to the T-026 loop path; absent `flight` and `loop` falls through to the original single Bézier path.
+- Self test:
+	- `node --check desktop/main.js`, `node --check desktop/renderer/planes.js`, and `git diff --check` passed.
+	- Executed the actual `planes.js` in an isolated Node renderer harness with 20 deterministic parameter sets. All flights landed within 8 seconds, produced finite values, stayed inside the 24px work-area bounds at rest, and covered both directions equally (left 10, right 10). The same cases run at 16ms and 32ms sampling had no divergent shape (sampled displacement under 120px).
+	- The same harness verified the real legacy single-Bézier payload and a valid T-026 loop payload both reach their existing landing path when `flight` is absent.
+	- A same-repository Electron companion instance is already listening on `127.0.0.1:8787`; it was left running to avoid interrupting desktop use, so this revision was not started as a competing second `npm start` process. Manual desktop launch/visual acceptance remains required for the physical motion.
+- Remaining:
+	- On the target desktop, complete a task and verify the plane's random left/right launch, dive-lift-stall glide, edge turnback, bottom touchdown/skid, click-to-focus removal, and independent behavior for overlapping planes.

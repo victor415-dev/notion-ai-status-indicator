@@ -481,8 +481,9 @@ function spawnPlaneFromPet(payload) {
 	showPlaneWindow();
 
 	const petBounds = mainWindow.getBounds();
+	const dirX = Math.random() < 0.5 ? 1 : -1;
 	const start = {
-		x: Math.round(petBounds.x + petBounds.width - 10),
+		x: Math.round(dirX === 1 ? petBounds.x + petBounds.width - 10 : petBounds.x + 10),
 		y: Math.round(petBounds.y + Math.max(18, petBounds.height * 0.5) - 2),
 	};
 	const end = pickPlaneTarget();
@@ -504,14 +505,23 @@ function spawnPlaneFromPet(payload) {
 	const landMs = 350 + Math.round(Math.random() * 150);
 	const duration = launchMs + loopMs + landMs;
 	const loop = { cx, cy, rx, ry, direction, entryAngle, launchMs, loopMs, landMs };
+	const theta0 = (10 + Math.random() * 25) * Math.PI / 180;
+	const flight = {
+		dirX,
+		theta0,
+		v0: 500 + Math.random() * 300,
+		vt: 320 + Math.random() * 100,
+		kDrag: 0.15 + Math.random() * 0.10,
+		g: 900 * (0.90 + Math.random() * 0.20),
+		maxMs: 6000,
+	};
 	console.log(
-		"[NAI-PET] plane loop",
-		`cx=${Math.round(cx)}`,
-		`cy=${Math.round(cy)}`,
-		`rx=${Math.round(rx)}`,
-		`ry=${Math.round(ry)}`,
-		`dir=${direction}`,
-		`total=${duration}ms`,
+		"[NAI-PET] plane flight",
+		`dir=${flight.dirX}`,
+		`theta0=${(flight.theta0 * 180 / Math.PI).toFixed(1)}deg`,
+		`v0=${Math.round(flight.v0)}`,
+		`vt=${Math.round(flight.vt)}`,
+		`kDrag=${flight.kDrag.toFixed(2)}`,
 	);
 	const planeId = `plane-${Date.now()}-${++planeSeq}`;
 	const plane = {
@@ -524,6 +534,8 @@ function spawnPlaneFromPet(payload) {
 		end,
 		duration,
 		loop,
+		flight,
+		petBounds: inflateRect(petBounds, 16),
 		releaseFrame: Number.isFinite(payload && payload.releaseFrame) ? Number(payload.releaseFrame) : 5,
 	};
 	activePlanes.set(planeId, plane);
