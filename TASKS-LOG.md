@@ -752,3 +752,19 @@
 	- Only `desktop/main.js`, `desktop/renderer/planes.js`, `src/content/content.js`, and this log were changed. No binary files, `desktop/renderer/renderer.js`, scheduling, release, hover/click, or pointer-through logic was modified.
 - Remaining:
 	- Manual target-desktop acceptance: observe natural climb/stall/glide, scattered in-screen landings, no bottom-edge skid, 2s post-stream completion latency, click/hover behavior after landing, and overlapping planes.
+
+## T-029
+- Date: 2026-08-10 (Asia/Shanghai)
+- Commit:
+	- 3e5f2ec — fix(pet): guided glide landing, visible phugoid, edge-aware launch (T-029)
+- Changes:
+	- `desktop/main.js`: Kept the original payload `end` for loop/legacy fallbacks, while constraining `dirX` to the open side when the pet is within 400px of a work-area edge; random direction remains only when both sides are open.
+	- `desktop/renderer/planes.js`: Removed the T-028 Bézier approach. At half of `glideMs`, the renderer now selects a local forward/downward target 300-900px ahead and 150-450px below, clamps it to `flightBounds()`, retries up to five times around the pet and landed planes, and logs the target. Guidance is physical: desired pitch is limited to 0.9rad/s per frame, so velocity remains continuous; arrival uses the distance/speed condition and snaps to the actual target. Pre-guidance pitch trim damping is 0.25/s, and post-guidance damping is disabled.
+- Self test:
+	- `node --check desktop/main.js`, `node --check desktop/renderer/planes.js`, and `git diff --check` passed.
+	- Fixed-seed 20-case integration passed: targets were forward/down and in bounds, all trajectories remained finite and landed within 8 seconds, speed stayed at or below 1.5x initial speed, and steering stayed at or below 0.9rad/s. A representative pre-guidance trace had two visible theta extrema.
+	- Confirmed `flight -> loop -> legacy single-Bézier` fallback ordering, coordinate normalization, 2s DONE grace, and interaction/scheduling files were not changed.
+- Scope:
+	- Only `desktop/main.js`, `desktop/renderer/planes.js`, and this log were changed. No binary, renderer scheduler, pointer-through, hover/click, landing-frame, or manifest changes.
+- Remaining:
+	- Manual target-desktop acceptance: verify no edge-facing launch near the pet, visible climb/stall/phugoid motion, no 180-degree approach sprint, scattered in-screen landings, continuous release timing, and unchanged plane interaction.

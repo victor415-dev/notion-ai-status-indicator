@@ -133,6 +133,10 @@ function flightBounds() {
 	};
 }
 
+function clamp(value, minimum, maximum) {
+	return Math.min(maximum, Math.max(minimum, value));
+}
+
 function currentFlightDirection(physics, now) {
 	if (!physics.turn) return physics.dirX;
 	const progress = Math.min(1, Math.max(0, (now - physics.turn.startedAt) / 350));
@@ -164,48 +168,52 @@ function initialFlightState(rec, now) {
 		turn: null,
 		turnCount: 0,
 		lastAngle: 0,
-		approach: null,
+		guided: false,
 	};
 	return rec.physics;
 }
 
-function beginGlideApproach(rec, now) {
-	const physics = rec.physics;
-	if (physics.approach) return;
-	const velocity = {
-		x: currentFlightDirection(physics, now) * physics.v * Math.cos(physics.theta),
-		y: -physics.v * Math.sin(physics.theta),
-	};
-	physics.approach = {
-		startedAt: now,
-		start: { x: physics.x, y: physics.y },
-		control: { x: physics.x + velocity.x * 0.3, y: physics.y + velocity.y * 0.3 },
-		duration: Number(rec.flight.approachMs) > 0 ? rec.flight.approachMs : 600,
-		angle: physics.lastAngle,
-	};
+function pointOverPet(rec, point) {
+	const bounds = rec.petBounds;
+	if (!bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return false;
+	const planeRadius = 38;
+	return point.x >= bounds.x - planeRadius
+		&& point.x <= bounds.x + bounds.width + planeRadius
+		&& point.y >= bounds.y - planeRadius
+		&& point.y <= bounds.y + bounds.height + planeRadius;
 }
 
-function updateGlideApproach(rec, now, elapsed) {
-	const { approach } = rec.physics;
-	const progress = Math.min(1, Math.max(0, (now - approach.startedAt) / approach.duration));
-	const eased = easeOut(progress);
-	const pos = bezier(approach.start, approach.control, rec.end, eased);
-	const tangentVector = tangent(approach.start, approach.control, rec.end, eased);
-	const tangentAngle = Number.isFinite(angleFromTangent(tangentVector))
-		? angleFromTangent(tangentVector)
-		: approach.angle;
-	setFlightTransform(rec, pos, smoothSegmentAngle(rec, "glide-approach", tangentAngle * (1 - eased), now));
-	updateFlyingFrame(rec, elapsed);
-	if (progress < 1) return;
-	setFlightTransform(rec, rec.end, 0);
-	finishFlight(rec, now);
+function pointOverLandedPlane(rec, point) {
+	for (const other of planes.values()) {
+		if (other === rec || !other.landed || !other.end) continue;
+		if (Math.hypot(point.x - other.end.x, point.y - other.end.y) < 48) return true;
+	}
+	return false;
+}
+
+function pickGlideTarget(rec, physics) {
+	const bounds = flightBounds();
+	let candidate = { x: physics.x, y: physics.y };
+	for (let attempt = 0; attempt < 5; attempt += 1) {
+		candidate = {
+			x: clamp(physics.x + physics.dirX * (300 + Math.random() * 600), bounds.left, bounds.right),
+			y: clamp(physics.y + 150 + Math.random() * 300, bounds.top, bounds.bottom),
+		};
+		if (!pointOverPet(rec, candidate) && !pointOverLandedPlane(rec, candidate)) return candidate;
+	}
+	return candidate;
 }
 
 function updatePhysicsPlane(rec, now) {
 	const physics = initialFlightState(rec, now);
 	const elapsed = Math.max(0, now - rec.startedAt);
-	if (physics.approach) {
-		updateGlideApproach(rec, now, elapsed);
+	if (elapsed >= rec.flight.maxMs) {
+		if (!physics.guided) {
+			rec.end = pickGlideTarget(rec, physics);
+			physics.guided = true;
+		}
+		setFlightTransform(rec, rec.end, 0);
+		finishFlight(rec, now);
 		return;
 	}
 
@@ -227,15 +235,25 @@ function updatePhysicsPlane(rec, now) {
 	const previous = { x: physics.x, y: physics.y };
 	physics.x += direction * physics.v * Math.cos(physics.theta) * dt;
 	physics.y -= physics.v * Math.sin(physics.theta) * dt;
-	physics.theta += (-0.15 - physics.theta) * Math.min(1, 0.8 * dt);
+	if (!physics.guided && elapsed >= (Number(flight.glideMs) || 2400) * 0.5) {
+		rec.end = pickGlideTarget(rec, physics);
+		physics.guided = true;
+		console.debug("[NAI-PET] glide target", rec.end.x, rec.end.y, "from", Math.round(physics.x), Math.round(physics.y));
+	}
+	if (physics.guided) {
+		const desired = Math.atan2(-(rec.end.y - physics.y), physics.dirX * (rec.end.x - physics.x));
+		physics.theta += clamp(desired - physics.theta, -0.9 * dt, 0.9 * dt);
+	} else {
+		physics.theta += (-0.15 - physics.theta) * Math.min(1, 0.25 * dt);
+	}
 	const velocityAngle = angleFromTangent({ x: physics.x - previous.x, y: physics.y - previous.y });
 	physics.lastAngle = Number.isFinite(velocityAngle) ? velocityAngle : physics.lastAngle;
 	const phase = physics.turn ? `physics-turn-${physics.turn.id}` : "physics";
 	setFlightTransform(rec, physics, smoothSegmentAngle(rec, phase, physics.lastAngle, now));
 	updateFlyingFrame(rec, elapsed);
-	if (elapsed >= (Number(rec.flight.glideMs) || 2400) || physics.y > window.innerHeight - 80 || elapsed >= rec.flight.maxMs) {
-		beginGlideApproach(rec, now);
-		updateGlideApproach(rec, now, elapsed);
+	if (physics.guided && (Math.hypot(physics.x - rec.end.x, physics.y - rec.end.y) < 24 || physics.v < 60)) {
+		setFlightTransform(rec, rec.end, 0);
+		finishFlight(rec, now);
 	}
 }
 

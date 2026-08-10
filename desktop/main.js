@@ -481,7 +481,17 @@ function spawnPlaneFromPet(payload) {
 	showPlaneWindow();
 
 	const petBounds = mainWindow.getBounds();
-	const dirX = Math.random() < 0.5 ? 1 : -1;
+	const wa = getPetWorkArea();
+	const petCenterX = petBounds.x + petBounds.width / 2;
+	const leftDistance = petCenterX - wa.x;
+	const rightDistance = wa.x + wa.width - petCenterX;
+	const dirX = leftDistance < 400 && rightDistance >= 400
+		? 1
+		: rightDistance < 400 && leftDistance >= 400
+			? -1
+			: leftDistance < 400 || rightDistance < 400
+				? (rightDistance >= leftDistance ? 1 : -1)
+				: (Math.random() < 0.5 ? 1 : -1);
 	const start = {
 		x: Math.round(dirX === 1 ? petBounds.x + petBounds.width - 10 : petBounds.x + 10),
 		y: Math.round(petBounds.y + Math.max(18, petBounds.height * 0.5) - 2),
@@ -491,7 +501,6 @@ function spawnPlaneFromPet(payload) {
 		x: Math.round((start.x + end.x) / 2 + (Math.random() * 120 - 60)),
 		y: Math.round(Math.min(start.y, end.y) - 70 - Math.random() * 70),
 	};
-	const wa = getPetWorkArea();
 	const cx = wa.x + wa.width / 2;
 	const cy = wa.y + wa.height / 2;
 	const maxRx = Math.max(1, wa.width / 2 - 24);
@@ -514,7 +523,6 @@ function spawnPlaneFromPet(payload) {
 		kDrag: 0.15 + Math.random() * 0.10,
 		g: 900 * (0.90 + Math.random() * 0.20),
 		glideMs: 1800 + Math.round(Math.random() * 800),
-		approachMs: 500 + Math.round(Math.random() * 200),
 		maxMs: 6000,
 	};
 	console.log(
