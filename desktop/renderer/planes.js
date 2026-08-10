@@ -169,6 +169,7 @@ function initialFlightState(rec, now) {
 		turnCount: 0,
 		lastAngle: 0,
 		guided: false,
+		guidanceStartedAt: 0,
 	};
 	return rec.physics;
 }
@@ -204,6 +205,14 @@ function pickGlideTarget(rec, physics) {
 	return candidate;
 }
 
+function beginGuidance(rec, physics, now) {
+	if (physics.guided) return;
+	rec.end = pickGlideTarget(rec, physics);
+	physics.guided = true;
+	physics.guidanceStartedAt = now;
+	console.debug("[NAI-PET] glide target", rec.end.x, rec.end.y, "from", Math.round(physics.x), Math.round(physics.y));
+}
+
 function updatePhysicsPlane(rec, now) {
 	const physics = initialFlightState(rec, now);
 	const elapsed = Math.max(0, now - rec.startedAt);
@@ -235,16 +244,15 @@ function updatePhysicsPlane(rec, now) {
 	const previous = { x: physics.x, y: physics.y };
 	physics.x += direction * physics.v * Math.cos(physics.theta) * dt;
 	physics.y -= physics.v * Math.sin(physics.theta) * dt;
-	if (!physics.guided && elapsed >= (Number(flight.glideMs) || 2400) * 0.5) {
-		rec.end = pickGlideTarget(rec, physics);
-		physics.guided = true;
-		console.debug("[NAI-PET] glide target", rec.end.x, rec.end.y, "from", Math.round(physics.x), Math.round(physics.y));
+	const glideMs = Number(flight.glideMs) || 3000;
+	if (!physics.guided && (elapsed >= glideMs * 0.75 || physics.y > bounds.bottom - 120)) {
+		beginGuidance(rec, physics, now);
 	}
 	if (physics.guided) {
 		const desired = Math.atan2(-(rec.end.y - physics.y), physics.dirX * (rec.end.x - physics.x));
-		physics.theta += clamp(desired - physics.theta, -0.9 * dt, 0.9 * dt);
-	} else {
-		physics.theta += (-0.15 - physics.theta) * Math.min(1, 0.25 * dt);
+		const guidanceProgress = Math.min(1, Math.max(0, (now - physics.guidanceStartedAt) / 500));
+		const turnRate = 0.3 + 0.6 * guidanceProgress;
+		physics.theta += clamp(desired - physics.theta, -turnRate * dt, turnRate * dt);
 	}
 	const velocityAngle = angleFromTangent({ x: physics.x - previous.x, y: physics.y - previous.y });
 	physics.lastAngle = Number.isFinite(velocityAngle) ? velocityAngle : physics.lastAngle;

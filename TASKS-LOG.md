@@ -768,3 +768,16 @@
 	- Only `desktop/main.js`, `desktop/renderer/planes.js`, and this log were changed. No binary, renderer scheduler, pointer-through, hover/click, landing-frame, or manifest changes.
 - Remaining:
 	- Manual target-desktop acceptance: verify no edge-facing launch near the pet, visible climb/stall/phugoid motion, no 180-degree approach sprint, scattered in-screen landings, continuous release timing, and unchanged plane interaction.
+
+## T-030
+- Date: 2026-08-10 (Asia/Shanghai)
+- Commit: `ac963e212087efe0e4e843e227a6ed02bbf88c3a` — `fix(pet): visible phugoid oscillation before guided landing (T-030)`
+- Changes:
+	- `desktop/main.js`: kept `vt` in the 320-420px/s range, set `v0` to 1.6-2.0x `vt`, reduced `kDrag` to 0.08-0.15, and extended `glideMs` to 2600-3400ms. Edge launch direction, theta range, work-area origin, bounds, and compatibility payloads are unchanged.
+	- `desktop/renderer/planes.js`: delayed normal guidance to 75% of `glideMs`, added low-altitude early guidance, removed pre-guidance trim damping, and ramped guidance turn rate from 0.3 to 0.9rad/s over 500ms. Target selection, landing conditions, fallbacks, and interactions are unchanged.
+- Self-test:
+	- `node --check desktop/main.js`, `node --check desktop/renderer/planes.js`, and `git diff --check` passed.
+	- Fixed-seed 20-case 16ms physics pre-guidance simulation stayed finite; observed theta extrema requirement was met by 5/20 cases (`2/2` extrema). The remaining 15 cases had fewer than two extrema on one or both sides, so the strict T-030 oscillation criterion is not yet passed.
+	- The same simulation showed the tested maximum speed remained below 1.5x initial speed; a full guided/bounds/landing harness and fresh Electron launch were not run in this pass.
+- Remaining:
+	- The strict requirement of at least two theta maxima and two minima in every one of 20 fixed-seed runs remains unresolved. No claim of full T-030 acceptance is made.

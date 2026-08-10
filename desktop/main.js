@@ -515,14 +515,15 @@ function spawnPlaneFromPet(payload) {
 	const duration = launchMs + loopMs + landMs;
 	const loop = { cx, cy, rx, ry, direction, entryAngle, launchMs, loopMs, landMs };
 	const theta0 = (10 + Math.random() * 25) * Math.PI / 180;
+	const vt = 320 + Math.random() * 100;
 	const flight = {
 		dirX,
 		theta0,
-		v0: 450 + Math.random() * 200,
-		vt: 320 + Math.random() * 100,
-		kDrag: 0.15 + Math.random() * 0.10,
+		v0: vt * (1.6 + Math.random() * 0.4),
+		vt,
+		kDrag: 0.08 + Math.random() * 0.07,
 		g: 900 * (0.90 + Math.random() * 0.20),
-		glideMs: 1800 + Math.round(Math.random() * 800),
+		glideMs: 2600 + Math.round(Math.random() * 800),
 		maxMs: 6000,
 	};
 	console.log(
