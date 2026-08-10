@@ -756,7 +756,7 @@
 ## T-029
 - Date: 2026-08-10 (Asia/Shanghai)
 - Commit:
-	- 3e5f2ec — fix(pet): guided glide landing, visible phugoid, edge-aware launch (T-029)
+	- e9947c3 — fix(pet): guided glide landing, visible phugoid, edge-aware launch (T-029)
 - Changes:
 	- `desktop/main.js`: Kept the original payload `end` for loop/legacy fallbacks, while constraining `dirX` to the open side when the pet is within 400px of a work-area edge; random direction remains only when both sides are open.
 	- `desktop/renderer/planes.js`: Removed the T-028 Bézier approach. At half of `glideMs`, the renderer now selects a local forward/downward target 300-900px ahead and 150-450px below, clamps it to `flightBounds()`, retries up to five times around the pet and landed planes, and logs the target. Guidance is physical: desired pitch is limited to 0.9rad/s per frame, so velocity remains continuous; arrival uses the distance/speed condition and snaps to the actual target. Pre-guidance pitch trim damping is 0.25/s, and post-guidance damping is disabled.
