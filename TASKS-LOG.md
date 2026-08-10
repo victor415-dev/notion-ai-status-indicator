@@ -781,3 +781,15 @@
 	- The same simulation showed the tested maximum speed remained below 1.5x initial speed; a full guided/bounds/landing harness and fresh Electron launch were not run in this pass.
 - Remaining:
 	- The strict requirement of at least two theta maxima and two minima in every one of 20 fixed-seed runs remains unresolved. No claim of full T-030 acceptance is made.
+
+## T-031
+- Date: 2026-08-10 (Asia/Shanghai)
+- Commit: `eaf0c996658d014310167e3d62fc35b82777a41c` — `fix(pet): phugoid period tuning + descent-only low guidance (T-031)`
+- Changes:
+	- `desktop/main.js`: tuned `vt` to 240-300px/s, kept `v0` at 1.6-2.0x `vt`, narrowed `kDrag` to 0.08-0.12, raised `g` to 950-1100px/s2, extended `glideMs` to 3200-4000ms, and raised `maxMs` to 7500ms. Edge launch, theta range, work-area origin, pet bounds, and compatibility fields are unchanged.
+	- `desktop/renderer/planes.js`: low-altitude guidance now requires `elapsed >= 600ms`, `theta < 0`, and `y > flightBounds().bottom - 100`; normal guidance remains at 75% of `glideMs`, with the existing 0.3-to-0.9rad/s ramp and landing/fallback behavior unchanged.
+- Self-test:
+	- `node --check desktop/main.js`, `node --check desktop/renderer/planes.js`, and `git diff --check` passed.
+	- Fixed-seed 20-case 16ms pure integration: ordinary start height met the 2-max/2-min theta criterion in 9/20 cases; the required bottom start (`bottom - 60`) met it in 0/20. Bottom-start guidance times were 640-896ms for the cases that descended into the low band, while the remaining cases reached normal guidance at 75% of `glideMs`.
+	- The strict 20/20 criterion, full 8-second bounded landing regression, and left/right edge arrays were not all passing in this run.
+- BLOCKED: T-031's mandated parameter ranges still cannot produce 20/20 cases with two theta maxima and two minima, especially from the required bottom-start condition. The criterion was not relaxed and no full acceptance claim is made.

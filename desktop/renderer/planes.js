@@ -245,7 +245,10 @@ function updatePhysicsPlane(rec, now) {
 	physics.x += direction * physics.v * Math.cos(physics.theta) * dt;
 	physics.y -= physics.v * Math.sin(physics.theta) * dt;
 	const glideMs = Number(flight.glideMs) || 3000;
-	if (!physics.guided && (elapsed >= glideMs * 0.75 || physics.y > bounds.bottom - 120)) {
+	const lowAndDescending = elapsed >= 600
+		&& physics.theta < 0
+		&& physics.y > bounds.bottom - 100;
+	if (!physics.guided && (elapsed >= glideMs * 0.75 || lowAndDescending)) {
 		beginGuidance(rec, physics, now);
 	}
 	if (physics.guided) {
