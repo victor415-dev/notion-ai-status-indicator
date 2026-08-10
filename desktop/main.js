@@ -509,10 +509,12 @@ function spawnPlaneFromPet(payload) {
 	const flight = {
 		dirX,
 		theta0,
-		v0: 500 + Math.random() * 300,
+		v0: 450 + Math.random() * 200,
 		vt: 320 + Math.random() * 100,
 		kDrag: 0.15 + Math.random() * 0.10,
 		g: 900 * (0.90 + Math.random() * 0.20),
+		glideMs: 1800 + Math.round(Math.random() * 800),
+		approachMs: 500 + Math.round(Math.random() * 200),
 		maxMs: 6000,
 	};
 	console.log(
@@ -536,6 +538,7 @@ function spawnPlaneFromPet(payload) {
 		loop,
 		flight,
 		petBounds: inflateRect(petBounds, 16),
+		waOrigin: { x: wa.x, y: wa.y },
 		releaseFrame: Number.isFinite(payload && payload.releaseFrame) ? Number(payload.releaseFrame) : 5,
 	};
 	activePlanes.set(planeId, plane);

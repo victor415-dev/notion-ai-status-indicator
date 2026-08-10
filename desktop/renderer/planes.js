@@ -133,10 +133,6 @@ function flightBounds() {
 	};
 }
 
-function clamp(value, minimum, maximum) {
-	return Math.min(maximum, Math.max(minimum, value));
-}
-
 function currentFlightDirection(physics, now) {
 	if (!physics.turn) return physics.dirX;
 	const progress = Math.min(1, Math.max(0, (now - physics.turn.startedAt) / 350));
@@ -168,100 +164,48 @@ function initialFlightState(rec, now) {
 		turn: null,
 		turnCount: 0,
 		lastAngle: 0,
-		forcedLanding: null,
-		skid: null,
+		approach: null,
 	};
 	return rec.physics;
 }
 
-function pointOverPet(rec, point) {
-	const bounds = rec.petBounds;
-	if (!bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return false;
-	const planeRadius = 38;
-	return point.x >= bounds.x - planeRadius
-		&& point.x <= bounds.x + bounds.width + planeRadius
-		&& point.y >= bounds.y - planeRadius
-		&& point.y <= bounds.y + bounds.height + planeRadius;
-}
-
-function beginSkid(rec, now, angle) {
+function beginGlideApproach(rec, now) {
 	const physics = rec.physics;
-	if (physics.skid) return;
-	const bounds = flightBounds();
-	const direction = physics.dirX;
-	const speedRatio = clamp((physics.v - 40) / 760, 0, 1);
-	const distance = 80 + speedRatio * 80;
-	const target = {
-		x: clamp(physics.x + direction * distance, bounds.left, bounds.right),
-		y: bounds.bottom,
+	if (physics.approach) return;
+	const velocity = {
+		x: currentFlightDirection(physics, now) * physics.v * Math.cos(physics.theta),
+		y: -physics.v * Math.sin(physics.theta),
 	};
-	if (pointOverPet(rec, target)) {
-		const pet = rec.petBounds;
-		target.x = direction > 0 ? pet.x + pet.width + 38 : pet.x - 38;
-		target.x = clamp(target.x, bounds.left, bounds.right);
-	}
-	physics.skid = { startedAt: now, start: { x: physics.x, y: physics.y }, target, angle };
-}
-
-function updateSkid(rec, now, elapsed) {
-	const { skid } = rec.physics;
-	const progress = Math.min(1, Math.max(0, (now - skid.startedAt) / 250));
-	const eased = easeOut(progress);
-	const pos = {
-		x: skid.start.x + (skid.target.x - skid.start.x) * eased,
-		y: skid.start.y + (skid.target.y - skid.start.y) * eased,
-	};
-	setFlightTransform(rec, pos, smoothSegmentAngle(rec, "skid", skid.angle * (1 - eased), now));
-	updateFlyingFrame(rec, elapsed);
-	if (progress < 1) return;
-	rec.end = skid.target;
-	setFlightTransform(rec, rec.end, 0);
-	finishFlight(rec, now);
-}
-
-function beginForcedLanding(rec, now) {
-	const physics = rec.physics;
-	if (physics.forcedLanding) return;
-	const bounds = flightBounds();
-	physics.forcedLanding = {
+	physics.approach = {
 		startedAt: now,
 		start: { x: physics.x, y: physics.y },
-		target: { x: clamp(physics.x, bounds.left, bounds.right), y: bounds.bottom },
+		control: { x: physics.x + velocity.x * 0.3, y: physics.y + velocity.y * 0.3 },
+		duration: Number(rec.flight.approachMs) > 0 ? rec.flight.approachMs : 600,
 		angle: physics.lastAngle,
 	};
 }
 
-function updateForcedLanding(rec, now, elapsed) {
-	const { forcedLanding } = rec.physics;
-	const progress = Math.min(1, Math.max(0, (now - forcedLanding.startedAt) / 300));
+function updateGlideApproach(rec, now, elapsed) {
+	const { approach } = rec.physics;
+	const progress = Math.min(1, Math.max(0, (now - approach.startedAt) / approach.duration));
 	const eased = easeOut(progress);
-	const pos = {
-		x: forcedLanding.start.x + (forcedLanding.target.x - forcedLanding.start.x) * eased,
-		y: forcedLanding.start.y + (forcedLanding.target.y - forcedLanding.start.y) * eased,
-	};
-	setFlightTransform(rec, pos, smoothSegmentAngle(rec, "forced-land", forcedLanding.angle * (1 - eased), now));
+	const pos = bezier(approach.start, approach.control, rec.end, eased);
+	const tangentVector = tangent(approach.start, approach.control, rec.end, eased);
+	const tangentAngle = Number.isFinite(angleFromTangent(tangentVector))
+		? angleFromTangent(tangentVector)
+		: approach.angle;
+	setFlightTransform(rec, pos, smoothSegmentAngle(rec, "glide-approach", tangentAngle * (1 - eased), now));
 	updateFlyingFrame(rec, elapsed);
 	if (progress < 1) return;
-	rec.physics.x = forcedLanding.target.x;
-	rec.physics.y = forcedLanding.target.y;
-	beginSkid(rec, now, 0);
-	updateSkid(rec, now, elapsed);
+	setFlightTransform(rec, rec.end, 0);
+	finishFlight(rec, now);
 }
 
 function updatePhysicsPlane(rec, now) {
 	const physics = initialFlightState(rec, now);
 	const elapsed = Math.max(0, now - rec.startedAt);
-	if (physics.skid) {
-		updateSkid(rec, now, elapsed);
-		return;
-	}
-	if (physics.forcedLanding) {
-		updateForcedLanding(rec, now, elapsed);
-		return;
-	}
-	if (elapsed >= rec.flight.maxMs) {
-		beginForcedLanding(rec, now);
-		updateForcedLanding(rec, now, elapsed);
+	if (physics.approach) {
+		updateGlideApproach(rec, now, elapsed);
 		return;
 	}
 
@@ -271,7 +215,7 @@ function updatePhysicsPlane(rec, now) {
 	if (physics.y < 60 && physics.theta > -0.08) physics.theta = Math.max(-0.18, physics.theta - Math.PI / 2 * dt);
 	const horizontalDirection = currentFlightDirection(physics, now);
 	const horizontalVelocity = horizontalDirection * physics.v * Math.cos(physics.theta);
-	if (!physics.turn && ((physics.x - bounds.left < 100 && horizontalVelocity < 0) || (bounds.right - physics.x < 100 && horizontalVelocity > 0))) {
+	if (!physics.turn && ((physics.x - bounds.left < 150 && horizontalVelocity < 0) || (bounds.right - physics.x < 150 && horizontalVelocity > 0))) {
 		beginFlightTurn(physics, now);
 	}
 	const direction = currentFlightDirection(physics, now);
@@ -281,16 +225,18 @@ function updatePhysicsPlane(rec, now) {
 	physics.v = Math.max(40, speed + (-flight.g * Math.sin(physics.theta) - flight.g * flight.kDrag * dragRatio * dragRatio) * dt);
 	physics.theta += flight.g / speed * (dragRatio * dragRatio - Math.cos(physics.theta)) * dt;
 	const previous = { x: physics.x, y: physics.y };
-	physics.x = clamp(physics.x + direction * physics.v * Math.cos(physics.theta) * dt, bounds.left, bounds.right);
-	physics.y = clamp(physics.y - physics.v * Math.sin(physics.theta) * dt, bounds.top, bounds.bottom);
+	physics.x += direction * physics.v * Math.cos(physics.theta) * dt;
+	physics.y -= physics.v * Math.sin(physics.theta) * dt;
+	physics.theta += (-0.15 - physics.theta) * Math.min(1, 0.8 * dt);
 	const velocityAngle = angleFromTangent({ x: physics.x - previous.x, y: physics.y - previous.y });
 	physics.lastAngle = Number.isFinite(velocityAngle) ? velocityAngle : physics.lastAngle;
 	const phase = physics.turn ? `physics-turn-${physics.turn.id}` : "physics";
 	setFlightTransform(rec, physics, smoothSegmentAngle(rec, phase, physics.lastAngle, now));
 	updateFlyingFrame(rec, elapsed);
-	if (physics.y < bounds.bottom) return;
-	beginSkid(rec, now, physics.lastAngle);
-	updateSkid(rec, now, elapsed);
+	if (elapsed >= (Number(rec.flight.glideMs) || 2400) || physics.y > window.innerHeight - 80 || elapsed >= rec.flight.maxMs) {
+		beginGlideApproach(rec, now);
+		updateGlideApproach(rec, now, elapsed);
+	}
 }
 
 function updateLoopPlane(rec, now) {
@@ -445,6 +391,23 @@ function addPlane(payload) {
 	el.appendChild(img);
 	stage.appendChild(el);
 
+	const waOrigin = payload.waOrigin && Number.isFinite(payload.waOrigin.x) && Number.isFinite(payload.waOrigin.y)
+		? { x: payload.waOrigin.x, y: payload.waOrigin.y }
+		: { x: 0, y: 0 };
+	const toLocalPoint = (point) => ({
+		x: Number(point && point.x || 0) - waOrigin.x,
+		y: Number(point && point.y || 0) - waOrigin.y,
+	});
+	const toLocalBounds = (bounds) => bounds && {
+		x: Number(bounds.x || 0) - waOrigin.x,
+		y: Number(bounds.y || 0) - waOrigin.y,
+		width: Number(bounds.width || 0),
+		height: Number(bounds.height || 0),
+	};
+	const localLoop = payload.loop && Object.assign({}, payload.loop, {
+		cx: Number(payload.loop.cx || 0) - waOrigin.x,
+		cy: Number(payload.loop.cy || 0) - waOrigin.y,
+	});
 	const rec = {
 		id,
 		el,
@@ -452,13 +415,13 @@ function addPlane(payload) {
 		conversationId: payload.conversationId || "",
 		tabId: payload.tabId || "",
 		title: payload.title || "",
-		start: payload.start || { x: 0, y: 0 },
-		control: payload.control || { x: 0, y: 0 },
-		end: payload.end || { x: 0, y: 0 },
+		start: toLocalPoint(payload.start),
+		control: toLocalPoint(payload.control),
+		end: toLocalPoint(payload.end),
 		duration: Number(payload.duration) || 550,
-		loop: payload.loop || null,
+		loop: localLoop || null,
 		flight: payload.flight || null,
-		petBounds: payload.petBounds || null,
+		petBounds: toLocalBounds(payload.petBounds),
 		physics: null,
 		startedAt: performance.now(),
 		landed: false,

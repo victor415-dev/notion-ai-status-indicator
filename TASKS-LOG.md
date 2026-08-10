@@ -734,3 +734,21 @@
 	- A same-repository Electron companion instance is already listening on `127.0.0.1:8787`; it was left running to avoid interrupting desktop use, so this revision was not started as a competing second `npm start` process. Manual desktop launch/visual acceptance remains required for the physical motion.
 - Remaining:
 	- On the target desktop, complete a task and verify the plane's random left/right launch, dive-lift-stall glide, edge turnback, bottom touchdown/skid, click-to-focus removal, and independent behavior for overlapping planes.
+
+## T-028
+- Date: 2026-08-10 (Asia/Shanghai)
+- Commit:
+	- 19c193a — fix(pet): natural glide, scattered landing, faster throw (T-028)
+- Changes:
+	- `desktop/main.js`: Added `waOrigin` to plane payloads so screen-space spawn/target coordinates can be converted exactly once by the plane renderer. Reduced physics launch speed to 450-650px/s and added randomized 1800-2600ms glide and 500-700ms approach durations.
+	- `desktop/renderer/planes.js`: Normalized start/end/control/loop center/pet bounds into plane-window-local coordinates with a zero-origin compatibility fallback. Added -0.15rad pitch trim damping, 150px edge turnback, unclamped in-flight integration, and a quadratic glide approach from the current velocity tangent to the randomized `rec.end`. Removed the bottom-edge skid and forced-landing paths; arrival snaps to `rec.end` and finishes at zero angle. Existing loop and legacy single-Bézier fallbacks remain intact.
+	- `src/content/content.js`: Reduced `DONE_GRACE_MS` from 5000ms to 2000ms and added `[NAI] done grace start/end` debug logs. The stream lifecycle and 180000ms idle fallback are unchanged.
+- Self test:
+	- `node --check desktop/main.js`, `node --check desktop/renderer/planes.js`, `node --check src/content/content.js`, `node --check src/content/interceptor.js`, and `git diff --check` passed.
+	- Fixed-seed numeric simulation passed 20 flight cases: all landed at their randomized `end` points within 8 seconds, all values stayed finite, all end points stayed inside the work-area bounds, and both directions occurred equally (10 left / 10 right). Approach angles use the Bézier tangent and ease smoothly to 0 degrees.
+	- Source checks confirmed no `beginSkid`, `updateSkid`, `beginForcedLanding`, or `updateForcedLanding` references remain; the no-flight loop fallback and no-flight/no-loop legacy single-Bézier fallback remain present.
+	- An existing same-repository Electron instance is already listening on `127.0.0.1:8787`; it was left running and not interrupted, so a competing `npm start` process was not launched.
+- Scope:
+	- Only `desktop/main.js`, `desktop/renderer/planes.js`, `src/content/content.js`, and this log were changed. No binary files, `desktop/renderer/renderer.js`, scheduling, release, hover/click, or pointer-through logic was modified.
+- Remaining:
+	- Manual target-desktop acceptance: observe natural climb/stall/glide, scattered in-screen landings, no bottom-edge skid, 2s post-stream completion latency, click/hover behavior after landing, and overlapping planes.

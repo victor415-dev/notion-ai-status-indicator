@@ -12,7 +12,7 @@
     };
 
     const TAG = "[NAI-Indicator]";
-    const DONE_GRACE_MS = 5000;
+    const DONE_GRACE_MS = 2000;
     const IDLE_FALLBACK_MS = 180000;
     const DONE_RESET_MS = 180000;
     const FALLBACK_CONVERSATION_KEY = "__tab__";
@@ -147,9 +147,11 @@
         const c = ensureConversation(key);
         clearIdleFallback(c);
         if (c.doneGraceTimer) clearTimeout(c.doneGraceTimer);
+        console.debug("[NAI] done grace start", { activeStreams: c.activeStreams.size, at: Date.now() });
         console.debug(TAG, "done grace start", { activeStreams: c.activeStreams.size, at: Date.now() });
         c.doneGraceTimer = setTimeout(() => {
             c.doneGraceTimer = null;
+            console.debug("[NAI] done grace end", { activeStreams: c.activeStreams.size, at: Date.now() });
             if (c.activeStreams.size > 0) return;
             console.debug(TAG, "done reason stream-closed", { at: Date.now() });
             setState(key, STATES.DONE, { doneReason: "stream-closed", forceReport: true });
