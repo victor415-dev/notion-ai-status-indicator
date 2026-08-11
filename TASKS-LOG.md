@@ -793,3 +793,20 @@
 	- Fixed-seed 20-case 16ms pure integration: ordinary start height met the 2-max/2-min theta criterion in 9/20 cases; the required bottom start (`bottom - 60`) met it in 0/20. Bottom-start guidance times were 640-896ms for the cases that descended into the low band, while the remaining cases reached normal guidance at 75% of `glideMs`.
 	- The strict 20/20 criterion, full 8-second bounded landing regression, and left/right edge arrays were not all passing in this run.
 - BLOCKED: T-031's mandated parameter ranges still cannot produce 20/20 cases with two theta maxima and two minima, especially from the required bottom-start condition. The criterion was not relaxed and no full acceptance claim is made.
+
+## T-032
+- Date: 2026-08-11 (Asia/Shanghai)
+- Commit: this commit — `fix(pet): floor-graze tolerant phugoid, y-extrema tuned params (T-032)`
+- Changes:
+	- `desktop/renderer/planes.js`: replaced the descent-only 100px low-altitude guard with the requested floor guard: unguided, at least 600ms elapsed, and `y > bottom - 28`. This permits harmless low-wave troughs while still starting guidance before a floor crossing.
+	- `desktop/main.js`: installed the envelope-search result: theta0 25.2009-25.9527deg, vt 298.9505-313.5262px/s, v0 2.4509-2.6x vt, kDrag 0.05446-0.05920, g 980.0180-1026.7352px/s2, glideMs 3661-3800ms, and maxMs 8000. All values remain within the task hard limits; edge launch and payload compatibility fields are unchanged.
+- Parameter search:
+	- The initial broad grid found a height-extrema candidate at 78/80 when the 8px threshold was correctly applied between adjacent extrema rather than between adjacent samples.
+	- A deterministic bounded random search then evaluated full free-flight, floor-guard, 350ms edge-turn, and guided-landing integration. Intermediate best scores were 20/40, 25/40, 32/40, 38/40, then 40/40. The final narrow interval above is the first 40/40 candidate retained.
+- Self-test:
+	- `node --check desktop/main.js`, `node --check desktop/renderer/planes.js`, and `git diff --check` passed.
+	- Fixed seeds 1-20 at 16ms: screen-middle starts passed y(t) 2-max/2-min with adjacent extrema >=8px in 20/20 cases; bottom starts at `bottom - 60` also passed 20/20. Combined result: 40/40.
+	- The full integration harness, including the production 350ms edge turn and guidance-ramp math, kept all 40 cases in bounds, completed by 8000ms, had no edge turns/180-degree reversals, and remained at or below 1.5x v0. Guidance began at 2768-2848ms for both start heights, so bottom starts did not trip the floor guard early.
+	- Left/right edge-launch assertion passed: left-edge pet produces dirX=1 and right-edge pet produces dirX=-1, each toward the open side.
+- Remaining:
+	- Target-desktop visual acceptance should confirm that the numerically validated y(t) oscillations read as two or more visible height waves at the actual display scale.

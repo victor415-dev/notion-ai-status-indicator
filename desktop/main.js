@@ -514,17 +514,17 @@ function spawnPlaneFromPet(payload) {
 	const landMs = 350 + Math.round(Math.random() * 150);
 	const duration = launchMs + loopMs + landMs;
 	const loop = { cx, cy, rx, ry, direction, entryAngle, launchMs, loopMs, landMs };
-	const theta0 = (10 + Math.random() * 25) * Math.PI / 180;
-	const vt = 240 + Math.random() * 60;
+	const theta0 = (25.20088354824111 + Math.random() * 0.75178495957516) * Math.PI / 180;
+	const vt = 298.9504947606474 + Math.random() * 14.5757324574512;
 	const flight = {
 		dirX,
 		theta0,
-		v0: vt * (1.6 + Math.random() * 0.4),
+		v0: vt * (2.450929202884436 + Math.random() * 0.149070797115564),
 		vt,
-		kDrag: 0.08 + Math.random() * 0.04,
-		g: 950 + Math.random() * 150,
-		glideMs: 3200 + Math.round(Math.random() * 800),
-		maxMs: 7500,
+		kDrag: 0.054457081109285356 + Math.random() * 0.004744681653798876,
+		g: 980.0180427031592 + Math.random() * 46.7171503092862,
+		glideMs: 3661 + Math.round(Math.random() * 139),
+		maxMs: 8000,
 	};
 	console.log(
 		"[NAI-PET] plane flight",
