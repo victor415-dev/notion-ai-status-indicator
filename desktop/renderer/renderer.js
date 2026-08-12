@@ -81,6 +81,7 @@ let currentSpriteMask = null;
 let petMouseIgnored = null;
 let lastPointer = null;
 let layoutState = { below: false, horizontal: "end" };
+let planeThrowEnabled = false;
 let layoutFrame = 0;
 let layoutRequest = 0;
 let cardLayoutSignature = "";
@@ -787,6 +788,7 @@ function pumpThrowQueue() {
 }
 
 function queueThrow(throwMeta) {
+	if (!planeThrowEnabled) return;
 	if (!spriteVisible) return;
 	if (!throwMeta || !throwMeta.key) return;
 	const keys = throwMeta.keys || [throwMeta.key];
@@ -1040,6 +1042,10 @@ function resizePetForLayout(payload) {
 		.catch((error) => console.warn("[NAI-PET] resize failed", error && (error.stack || error.message || String(error))));
 }
 
+function syncFeatureFlags(context) {
+	planeThrowEnabled = Boolean(context && context.featureFlags && context.featureFlags.planeThrowEnabled);
+}
+
 function anchoredPetForSize(pet, oldSize, nextSize) {
 	const anchorX = layoutState.horizontal === "end" ? pet.x + oldSize : pet.x;
 	const anchorY = layoutState.below ? pet.y : pet.y + oldSize;
@@ -1064,12 +1070,16 @@ function resizePetTo(nextSize) {
 	window.naiBridge.getLayoutContext()
 		.then((context) => {
 			if (request !== layoutRequest) return;
+			syncFeatureFlags(context);
 			const currentPet = context ? petBoundsForContext(context, layoutState, oldSize) : null;
 			const pet = currentPet ? anchoredPetForSize(currentPet, oldSize, targetSize) : null;
 			applyLayout(nextLayout(context, size, targetSize, pet));
 			return resizePetForLayout({ ...size, petSize: targetSize, cards: list.length, layout: layoutPayload(), pet });
 		})
-		.catch(() => resizePetForLayout({ ...size, petSize: targetSize, cards: list.length, layout: layoutPayload() }));
+		.catch(() => {
+			planeThrowEnabled = false;
+			return resizePetForLayout({ ...size, petSize: targetSize, cards: list.length, layout: layoutPayload() });
+		});
 }
 
 function scheduleLayoutResize() {
@@ -1086,11 +1096,15 @@ function scheduleLayoutResize() {
 		window.naiBridge.getLayoutContext()
 			.then((context) => {
 				if (request !== layoutRequest) return;
+				syncFeatureFlags(context);
 				const pet = context ? petBoundsForContext(context) : null;
 				applyLayout(nextLayout(context, size));
 				return resizePetForLayout({ ...size, cards: list.length, layout: layoutPayload(), pet });
 			})
-			.catch(() => resizePetForLayout({ ...size, cards: list.length, layout: layoutPayload() }));
+			.catch(() => {
+				planeThrowEnabled = false;
+				return resizePetForLayout({ ...size, cards: list.length, layout: layoutPayload() });
+			});
 	});
 }
 

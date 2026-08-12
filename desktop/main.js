@@ -14,6 +14,10 @@ const DEFAULT_PET_SIZE = 56;
 const MIN_PET_SIZE = 40;
 const MAX_PET_SIZE = 160;
 const WORK_AREA_MARGIN = 8;
+// Keep archived plane-throw behavior behind this sole feature switch.
+const FEATURE_FLAGS = Object.freeze({
+	planeThrowEnabled: false,
+});
 let POSITION_FILE = null;
 let SETTINGS_FILE = null;
 let petSize = DEFAULT_PET_SIZE;
@@ -208,7 +212,7 @@ function layoutContext() {
 	const bounds = mainWindow.getBounds();
 	const display = screen.getDisplayMatching(bounds);
 	const workArea = display && display.workArea ? display.workArea : getPrimaryWorkArea();
-	return { bounds, workArea };
+	return { bounds, workArea, featureFlags: FEATURE_FLAGS };
 }
 
 function createPlaneWindow() {
@@ -373,8 +377,10 @@ function showPet() {
 		petVisible = true;
 		console.log("[NAI-PET] pet shown");
 	}
-	createPlaneWindow();
-	showPlaneWindow();
+	if (FEATURE_FLAGS.planeThrowEnabled) {
+		createPlaneWindow();
+		showPlaneWindow();
+	}
 	broadcastVisibility();
 }
 
@@ -476,6 +482,7 @@ function pickPlaneTarget() {
 }
 
 function spawnPlaneFromPet(payload) {
+	if (!FEATURE_FLAGS.planeThrowEnabled) return null;
 	if (!petVisible || !mainWindow) return null;
 	createPlaneWindow();
 	if (!planeWindow) return null;
@@ -628,6 +635,7 @@ ipcMain.on("pet:open-notion", (_ev, payload) => {
 });
 
 ipcMain.on("pet:spawn-plane", (_ev, payload) => {
+	if (!FEATURE_FLAGS.planeThrowEnabled) return;
 	const planeId = spawnPlaneFromPet(payload || {});
 	if (!planeId) return;
 	console.log("[NAI-PET] spawn plane", planeId, payload && payload.conversationId ? payload.conversationId : payload && payload.tabId ? payload.tabId : "");
@@ -752,6 +760,7 @@ ipcMain.on("pet:quit", () => {
 });
 
 app.whenReady().then(() => {
+	if (!FEATURE_FLAGS.planeThrowEnabled) console.info("[NAI-PET] plane throw disabled");
 	createWindow();
 	startWsServer();
 	app.on("activate", () => {
