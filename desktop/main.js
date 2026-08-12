@@ -35,6 +35,7 @@ let planeReady = false;
 let planeSeq = 0;
 let petMouseIgnored = true;
 const activePlanes = new Map(); // planeId -> plane payload/meta
+const authoredPlaneCleanupTimers = new Map();
 const interactivePlanes = new Set();
 const pendingPlaneSpawns = [];
 
@@ -496,6 +497,24 @@ function spawnPlaneFromPet(payload) {
 		x: Math.round(dirX === 1 ? petBounds.x + petBounds.width - 10 : petBounds.x + 10),
 		y: Math.round(petBounds.y + Math.max(18, petBounds.height * 0.5) - 2),
 	};
+	const safetyRadius = 62;
+	const directionalSpace = dirX === 1
+		? wa.x + wa.width - safetyRadius - start.x
+		: start.x - (wa.x + safetyRadius);
+	const topSpace = start.y - (wa.y + safetyRadius);
+	let authoredType = Math.random() < 0.5 ? "planar-loop-flyout" : "parabolic-land";
+	// The authored loop needs its full 990px reference width plus its raised arc.
+	if (authoredType === "planar-loop-flyout" && (directionalSpace < 864 || topSpace < 128)) {
+		authoredType = "parabolic-land";
+	}
+	const authoredTrajectory = {
+		type: authoredType,
+		dirX,
+		duration: authoredType === "planar-loop-flyout"
+			? 4200 + Math.round(Math.random() * 600)
+			: 3000 + Math.round(Math.random() * 800),
+		variation: Math.random(),
+	};
 	const end = pickPlaneTarget();
 	const control = {
 		x: Math.round((start.x + end.x) / 2 + (Math.random() * 120 - 60)),
@@ -543,14 +562,25 @@ function spawnPlaneFromPet(payload) {
 		start,
 		control,
 		end,
-		duration,
+		duration: authoredTrajectory.duration,
+		authoredTrajectory,
 		loop,
 		flight,
 		petBounds: inflateRect(petBounds, 16),
 		waOrigin: { x: wa.x, y: wa.y },
 		releaseFrame: Number.isFinite(payload && payload.releaseFrame) ? Number(payload.releaseFrame) : 5,
 	};
+	console.log(
+		"[NAI-PET] authored trajectory",
+		`type=${authoredTrajectory.type}`,
+		`dir=${authoredTrajectory.dirX}`,
+		`duration=${authoredTrajectory.duration}`,
+	);
 	activePlanes.set(planeId, plane);
+	if (authoredType === "planar-loop-flyout") {
+		const timer = setTimeout(() => removeActivePlane(planeId), authoredTrajectory.duration + 500);
+		authoredPlaneCleanupTimers.set(planeId, timer);
+	}
 	if (planeReady) {
 		planeWindow.webContents.send("nai:plane-spawn", plane);
 	} else {
@@ -560,6 +590,9 @@ function spawnPlaneFromPet(payload) {
 }
 
 function removeActivePlane(id) {
+	const timer = authoredPlaneCleanupTimers.get(id);
+	if (timer) clearTimeout(timer);
+	authoredPlaneCleanupTimers.delete(id);
 	activePlanes.delete(id);
 	interactivePlanes.delete(id);
 	if (planeWindow) planeWindow.webContents.send("nai:plane-remove", { id });

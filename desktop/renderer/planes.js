@@ -3,6 +3,7 @@
 const stage = document.getElementById("stage");
 
 const planes = new Map();
+const recentLandings = [];
 let raf = 0;
 let visible = true;
 let spriteMap = null;
@@ -38,6 +39,54 @@ function tangent(p0, p1, p2, t) {
 		x: 2 * u * (p1.x - p0.x) + 2 * t * (p2.x - p1.x),
 		y: 2 * u * (p1.y - p0.y) + 2 * t * (p2.y - p1.y),
 	};
+}
+
+function cubic(p0, p1, p2, p3, t) {
+	const u = 1 - t;
+	return {
+		x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+		y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+	};
+}
+
+function cubicTangent(p0, p1, p2, p3, t) {
+	const u = 1 - t;
+	return {
+		x: 3 * u * u * (p1.x - p0.x) + 6 * u * t * (p2.x - p1.x) + 3 * t * t * (p3.x - p2.x),
+		y: 3 * u * u * (p1.y - p0.y) + 6 * u * t * (p2.y - p1.y) + 3 * t * t * (p3.y - p2.y),
+	};
+}
+
+function buildArcTable(pointAt, samples = 320) {
+	const table = [];
+	let length = 0;
+	let previous = pointAt(0);
+	table.push({ t: 0, length, point: previous });
+	for (let index = 1; index <= samples; index += 1) {
+		const t = index / samples;
+		const point = pointAt(t);
+		length += Math.hypot(point.x - previous.x, point.y - previous.y);
+		table.push({ t, length, point });
+		previous = point;
+	}
+	return { table, length };
+}
+
+function pointAtArc(arc, distance, pointAt, tangentAt) {
+	const target = clamp(distance, 0, arc.length);
+	let low = 0;
+	let high = arc.table.length - 1;
+	while (low < high) {
+		const middle = Math.floor((low + high) / 2);
+		if (arc.table[middle].length < target) low = middle + 1;
+		else high = middle;
+	}
+	const next = arc.table[low];
+	const previous = arc.table[Math.max(0, low - 1)];
+	const span = Math.max(0.0001, next.length - previous.length);
+	const ratio = (target - previous.length) / span;
+	const t = previous.t + (next.t - previous.t) * ratio;
+	return { point: pointAt(t), tangent: tangentAt(t), t };
 }
 
 function easeIn(t) {
@@ -114,6 +163,14 @@ function hasFlightTrajectory(flight) {
 		&& flight.kDrag >= 0
 		&& flight.g > 0
 		&& flight.maxMs > 0;
+}
+
+function hasAuthoredTrajectory(trajectory) {
+	return Boolean(trajectory)
+		&& (trajectory.type === "planar-loop-flyout" || trajectory.type === "parabolic-land")
+		&& (trajectory.dirX === 1 || trajectory.dirX === -1)
+		&& Number.isFinite(trajectory.duration)
+		&& trajectory.duration > 0;
 }
 
 function updateFlyingFrame(rec, elapsed) {
@@ -327,6 +384,151 @@ function updateLoopPlane(rec, now) {
 	}
 }
 
+function authoredEase(progress) {
+	if (progress < 0.1) return 0.5 * Math.pow(progress / 0.1, 2) * 0.1;
+	if (progress > 0.82) {
+		const tail = (progress - 0.82) / 0.18;
+		return 0.82 + (1 - (1 - tail) * (1 - tail)) * 0.18;
+	}
+	return progress;
+}
+
+function buildPlanarLoop(rec) {
+	const bounds = flightBounds();
+	const safeRadius = 62;
+	const dir = rec.authoredTrajectory.dirX;
+	const availableWidth = dir === 1 ? bounds.right - safeRadius - rec.start.x : rec.start.x - (bounds.left + safeRadius);
+	const availableTop = rec.start.y - (bounds.top + safeRadius);
+	if (availableWidth < 864 || availableTop < 128) return null;
+	const scale = Math.min(1, availableWidth / 1080, availableTop / 160);
+	const mirrorX = (x) => rec.start.x + dir * x * scale;
+	const yAt = (y) => rec.start.y + (y - 380) * scale;
+	const center = { x: mirrorX(650), y: yAt(290) };
+	const rx = 150 * scale;
+	const ry = 70 * scale;
+	const entry = { x: center.x - dir * rx, y: center.y };
+	const exit = { x: mirrorX(1080), y: yAt(344) };
+	const approachControl = { x: entry.x, y: entry.y + 112 * scale };
+	const exitControl = { x: entry.x, y: entry.y - 112 * scale };
+	const approachPoint = (t) => bezier(rec.start, approachControl, entry, t);
+	const approachTangent = (t) => tangent(rec.start, approachControl, entry, t);
+	const loopPoint = (t) => {
+		const angle = Math.PI + Math.PI * 2 * t;
+		return { x: center.x + dir * rx * Math.cos(angle), y: center.y + ry * Math.sin(angle) };
+	};
+	const loopTangent = (t) => {
+		const angle = Math.PI + Math.PI * 2 * t;
+		return { x: -dir * rx * Math.sin(angle), y: ry * Math.cos(angle) };
+	};
+	const exitPoint = (t) => bezier(entry, exitControl, exit, t);
+	const exitTangent = (t) => tangent(entry, exitControl, exit, t);
+	const approach = buildArcTable(approachPoint);
+	const loop = buildArcTable(loopPoint);
+	const exitArc = buildArcTable(exitPoint);
+	const exitVector = exitTangent(1);
+	const exitLength = Math.hypot(exitVector.x, exitVector.y) || 1;
+	return { type: "planar-loop-flyout", dir, approach, loop, exitArc, approachPoint, approachTangent, loopPoint, loopTangent, exitPoint, exitTangent, exit, exitDirection: { x: exitVector.x / exitLength, y: exitVector.y / exitLength }, flyoutStart: 0.8 };
+}
+
+function buildParabolicLand(rec) {
+	const bounds = flightBounds();
+	const safeRadius = 62;
+	const dir = rec.authoredTrajectory.dirX;
+	const width = dir === 1 ? bounds.right - safeRadius - rec.start.x : rec.start.x - (bounds.left + safeRadius);
+	const topSpace = rec.start.y - (bounds.top + safeRadius);
+	if (width < 260 || topSpace < 90) return null;
+	const scale = Math.min(1, width / 990, topSpace / 278);
+	const variation = Number(rec.authoredTrajectory.variation) || 0;
+	const candidates = [-54, -27, 0, 27, 54];
+	const startIndex = Math.floor(variation * candidates.length) % candidates.length;
+	for (let offsetIndex = 0; offsetIndex < candidates.length; offsetIndex += 1) {
+		const landingOffset = candidates[(startIndex + offsetIndex) % candidates.length] * scale;
+		const horizontalScale = scale * (0.82 + 0.18 * ((variation + offsetIndex * 0.17) % 1));
+		const x = (base) => rec.start.x + dir * base * horizontalScale;
+		const y = (base) => rec.start.y + (base - 570) * scale + landingOffset * (base / 990);
+		const segments = [
+			[{ x: x(0), y: y(570) }, { x: x(175), y: y(515) }, { x: x(265), y: y(305) }, { x: x(475), y: y(292) }],
+			[{ x: x(475), y: y(292) }, { x: x(685), y: y(280) }, { x: x(810), y: y(535) }, { x: x(990), y: y(535) }],
+		];
+		const pointAt = (t) => t < 0.5 ? cubic(...segments[0], t * 2) : cubic(...segments[1], (t - 0.5) * 2);
+		const tangentAt = (t) => t < 0.5 ? cubicTangent(...segments[0], t * 2) : cubicTangent(...segments[1], (t - 0.5) * 2);
+		const end = segments[1][3];
+		const isSafe = Array.from({ length: 65 }, (_v, index) => pointAt(index / 64))
+			.every((point) => point.x >= bounds.left + safeRadius && point.x <= bounds.right - safeRadius && point.y >= bounds.top + safeRadius && point.y <= bounds.bottom - safeRadius);
+		if (!isSafe || recentLandings.some((point) => Math.hypot(point.x - end.x, point.y - end.y) < 48)) continue;
+		return { type: "parabolic-land", arc: buildArcTable(pointAt), pointAt, tangentAt, end };
+	}
+	return null;
+}
+
+function authoredPlan(rec) {
+	if (rec.authoredPlan) return rec.authoredPlan;
+	rec.authoredPlan = rec.authoredTrajectory.type === "planar-loop-flyout"
+		? buildPlanarLoop(rec)
+		: buildParabolicLand(rec);
+	return rec.authoredPlan;
+}
+
+function authoredTransform(rec, point, tangentVector, now, scale = 1, opacity = 1) {
+	const angle = angleFromTangent(tangentVector);
+	if (!Number.isFinite(rec.authoredRawAngle)) {
+		rec.authoredRawAngle = angle;
+		rec.authoredAngle = angle;
+	} else {
+		rec.authoredAngle += shortestAngleDelta(rec.authoredRawAngle, angle);
+		rec.authoredRawAngle = angle;
+	}
+	rec.el.style.opacity = String(opacity);
+	rec.el.style.transform = `translate3d(${point.x}px, ${point.y}px, 0) translate(-50%, -50%) rotate(${rec.authoredAngle}deg) scale(${scale})`;
+}
+
+function updateAuthoredPlane(rec, now) {
+	const elapsed = Math.max(0, now - rec.startedAt);
+	const plan = authoredPlan(rec);
+	if (!plan && rec.authoredTrajectory.type === "planar-loop-flyout") {
+		rec.authoredTrajectory = { type: "parabolic-land", dirX: rec.authoredTrajectory.dirX, duration: rec.duration };
+		rec.authoredPlan = buildParabolicLand(rec);
+		if (!rec.authoredPlan) return;
+		return updateAuthoredPlane(rec, now);
+	}
+	if (!plan) return;
+	const progress = Math.min(1, elapsed / rec.authoredTrajectory.duration);
+	updateFlyingFrame(rec, elapsed);
+	if (plan.type === "planar-loop-flyout") {
+		const flyoutStart = plan.flyoutStart;
+		if (progress < flyoutStart) {
+			const phase = progress / flyoutStart;
+			const approachWeight = 0.16;
+			const loopWeight = 0.66;
+			let arc;
+			if (phase < approachWeight) arc = { source: plan.approach, pointAt: plan.approachPoint, tangentAt: plan.approachTangent, distance: plan.approach.length * phase / approachWeight };
+			else if (phase < approachWeight + loopWeight) arc = { source: plan.loop, pointAt: plan.loopPoint, tangentAt: plan.loopTangent, distance: plan.loop.length * (phase - approachWeight) / loopWeight };
+			else arc = { source: plan.exitArc, pointAt: plan.exitPoint, tangentAt: plan.exitTangent, distance: plan.exitArc.length * (phase - approachWeight - loopWeight) / (1 - approachWeight - loopWeight) };
+			const sample = pointAtArc(arc.source, arc.distance, arc.pointAt, arc.tangentAt);
+			authoredTransform(rec, sample.point, sample.tangent, now);
+			return;
+		}
+		const tail = (progress - flyoutStart) / (1 - flyoutStart);
+		const distance = 320 * tail + 160 * tail * tail;
+		const point = {
+			x: plan.exit.x + plan.exitDirection.x * distance,
+			y: plan.exit.y + plan.exitDirection.y * distance,
+		};
+		const opacity = tail < 0.65 ? 1 : 1 - (tail - 0.65) / 0.35;
+		authoredTransform(rec, point, plan.exitDirection, now, 1 + 1.4 * tail, Math.max(0, opacity));
+		if (progress >= 1 || opacity <= 0) removePlane(rec.id);
+		return;
+	}
+	const sample = pointAtArc(plan.arc, plan.arc.length * authoredEase(progress), plan.pointAt, plan.tangentAt);
+	authoredTransform(rec, sample.point, sample.tangent, now);
+	if (progress >= 1) {
+		rec.end = plan.end;
+		recentLandings.push({ x: plan.end.x, y: plan.end.y });
+		if (recentLandings.length > 10) recentLandings.shift();
+		finishFlight(rec, now);
+	}
+}
+
 function removePlane(id) {
 	const rec = planes.get(id);
 	if (!rec) return;
@@ -347,6 +549,10 @@ function clearPlanes() {
 }
 
 function updatePlane(rec, now) {
+	if (!rec.landed && hasAuthoredTrajectory(rec.authoredTrajectory)) {
+		updateAuthoredPlane(rec, now);
+		return;
+	}
 	if (!rec.landed && hasFlightTrajectory(rec.flight)) {
 		updatePhysicsPlane(rec, now);
 		return;
@@ -435,6 +641,9 @@ function addPlane(payload) {
 		cx: Number(payload.loop.cx || 0) - waOrigin.x,
 		cy: Number(payload.loop.cy || 0) - waOrigin.y,
 	});
+	const authoredTrajectory = payload.authoredTrajectory && Object.assign({}, payload.authoredTrajectory, {
+		duration: Number(payload.authoredTrajectory.duration) || Number(payload.duration) || 0,
+	});
 	const rec = {
 		id,
 		el,
@@ -446,6 +655,8 @@ function addPlane(payload) {
 		control: toLocalPoint(payload.control),
 		end: toLocalPoint(payload.end),
 		duration: Number(payload.duration) || 550,
+		authoredTrajectory: authoredTrajectory || null,
+		authoredPlan: null,
 		loop: localLoop || null,
 		flight: payload.flight || null,
 		petBounds: toLocalBounds(payload.petBounds),

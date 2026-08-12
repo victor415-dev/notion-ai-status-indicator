@@ -810,3 +810,19 @@
 	- Left/right edge-launch assertion passed: left-edge pet produces dirX=1 and right-edge pet produces dirX=-1, each toward the open side.
 - Remaining:
 	- Target-desktop visual acceptance should confirm that the numerically validated y(t) oscillations read as two or more visible height waves at the actual display scale.
+
+## T-035
+- Date: 2026-08-12 (Asia/Shanghai)
+- Commit: this commit - `feat(pet): authored planar loop flyout and parabolic landing (T-035)`
+- Changes:
+	- `desktop/main.js`: new planes receive an `authoredTrajectory` payload at 50/50 selection. It preserves existing open-side `dirX`; planar loop selection falls back to parabolic land when the direction-space or headroom cannot retain the full safety envelope. It logs `[NAI-PET] authored trajectory type=... dir=... duration=...`. Planar flyouts receive an idempotent `duration + 500ms` main-process cleanup timer that shares `removeActivePlane()` with snapshot cleanup.
+	- `desktop/renderer/planes.js`: authored trajectories have precedence over the retained `flight -> loop -> legacy Bezier` paths. Both authored templates use 320-sample arc-length tables and distance lookup per frame, with tangent-derived continuous heading.
+	- Planar loop geometry is the normalized 1200x720 reference: start `(90,380)`, center `(650,290)`, `rx=150`, `ry=70`, and exit `(1080,344)`, mirrored horizontally for leftward travel. The loop uses one 360-degree ellipse, constant scale/opacity until flyout, then the final 20% travels along the exit tangent with scale `1 -> 2.4` and late fade `1 -> 0`; it removes itself without landing frames or `finishFlight()`.
+	- Parabolic land geometry is the two-cubic normalized reference `M 90 570 C 265 515,355 305,565 292 C 775 280,900 535,1080 535`. It uses only legal candidate mappings, small two-dimensional landing variation, and a recent-landings cache; it reaches the true curve endpoint before `finishFlight()` so normal land-frame hover/click behavior is retained.
+- Self-test:
+	- `node --check desktop/main.js`, `node --check desktop/renderer/planes.js`, and `git diff --check` passed.
+	- Deterministic geometry coverage: 1024x700, 1440x900, 1728x1117, and 2560x1440; both directions; 100 instances per template/direction/size (800 planar plus 800 parabolic). Planar loop closed within `0px`, entry/closure tangent error was `0deg`, accumulated heading was +/-360deg, and all loop points remained inside the 62px complete-plane safety envelope. Parabolas had exactly one topmost point, all sampled points within the same safety envelope, and terminal tangent horizontal within `0deg` modulo 180.
+	- Isolated Electron launched successfully and accepted authored completion payloads without process crash. A frontmost non-Notion application changed during the capture window, so the four requested visual recordings were not accepted as visual proof; no video, screenshot, or log artifact was added to git.
+	- Compatibility: authored payload absence still enters the unchanged `flight -> loop -> legacy Bezier` order. Renderer scheduling, content detection, pet sizing, and assets were not modified.
+- Remaining:
+	- Target-desktop visual acceptance must explicitly observe right/left planar flyouts and right/left parabolic landings, including flyout cleanup and landed-plane interaction.
