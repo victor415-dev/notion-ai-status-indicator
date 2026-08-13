@@ -325,6 +325,8 @@ function outlineSprite(canvas, context) {
 	const imageData = context.getImageData(0, 0, width, height);
 	const { data } = imageData;
 	const entity = new Uint8Array(width * height);
+	const exterior = new Uint8Array(width * height);
+	const queue = [];
 	let opaquePixels = 0;
 	let outlinePixels = 0;
 
@@ -334,10 +336,35 @@ function outlineSprite(canvas, context) {
 		opaquePixels += 1;
 	}
 
+	const enqueueExterior = (pixel) => {
+		if (pixel < 0 || pixel >= exterior.length || entity[pixel] || exterior[pixel]) return;
+		exterior[pixel] = 1;
+		queue.push(pixel);
+	};
+
+	for (let x = 0; x < width; x += 1) {
+		enqueueExterior(x);
+		enqueueExterior((height - 1) * width + x);
+	}
+	for (let y = 1; y < height - 1; y += 1) {
+		enqueueExterior(y * width);
+		enqueueExterior(y * width + width - 1);
+	}
+
+	for (let head = 0; head < queue.length; head += 1) {
+		const pixel = queue[head];
+		const x = pixel % width;
+		const y = Math.floor(pixel / width);
+		if (x > 0) enqueueExterior(pixel - 1);
+		if (x < width - 1) enqueueExterior(pixel + 1);
+		if (y > 0) enqueueExterior(pixel - width);
+		if (y < height - 1) enqueueExterior(pixel + width);
+	}
+
 	for (let y = 0; y < height; y += 1) {
 		for (let x = 0; x < width; x += 1) {
 			const pixel = y * width + x;
-			if (entity[pixel]) continue;
+			if (entity[pixel] || !exterior[pixel]) continue;
 			let touchesEntity = false;
 			for (let offsetY = -2; offsetY <= 2 && !touchesEntity; offsetY += 1) {
 				for (let offsetX = -2; offsetX <= 2; offsetX += 1) {
