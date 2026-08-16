@@ -71,22 +71,43 @@ html, body {
 	display: block;
 	object-fit: contain;
 	pointer-events: none;
+	transform: scaleX(1);
+	transform-origin: center;
+	will-change: transform;
+	transition: none;
+}
+
+.pet-icon.is-facing-left {
+	transform: scaleX(-1);
 }
 
 .resize-handle {
 	position: absolute;
-	width: 14px;
-	height: 14px;
+	width: 16px;
+	height: 16px;
 	padding: 0;
-	border: 1px solid rgba(15, 23, 42, 0.28);
-	border-radius: 4px;
-	background: rgba(255, 255, 255, 0.76);
-	color: #52525b;
+	border: 1px solid rgba(67, 83, 104, 0.34);
+	border-radius: 6px;
+	background: rgba(244, 248, 251, 0.84);
+	color: #45566d;
+	box-shadow: 0 2px 5px rgba(15, 23, 42, 0.20), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+	-webkit-backdrop-filter: blur(5px);
+	backdrop-filter: blur(5px);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	cursor: nwse-resize;
 	z-index: 2;
+	outline: none;
+	transform: scale(1);
+	transform-origin: center;
+	transition: transform 90ms ease-out, color 120ms ease-out, background-color 120ms ease-out, border-color 120ms ease-out;
+}
+
+.resize-handle svg {
+	width: 16px;
+	height: 16px;
+	flex: 0 0 auto;
 }
 
 .resize-handle[hidden] {
@@ -94,8 +115,18 @@ html, body {
 }
 
 .resize-handle:hover {
-	background: rgba(226, 232, 240, 0.96);
-	color: #1d4ed8;
+	border-color: rgba(15, 118, 110, 0.48);
+	background: rgba(238, 249, 248, 0.94);
+	color: #0f8178;
+}
+
+.resize-handle:active {
+	transform: scale(0.94);
+}
+
+.resize-handle:focus-visible {
+	outline: 2px solid rgba(19, 139, 129, 0.78);
+	outline-offset: 2px;
 }
 
 .cards {
@@ -238,11 +269,52 @@ html, body {
 		color: #f8fafc;
 	}
 	.resize-handle {
-		border-color: rgba(244, 244, 245, 0.36);
-		background: rgba(39, 39, 42, 0.82);
-		color: #d4d4d8;
+		border-color: rgba(190, 204, 216, 0.34);
+		background: rgba(31, 41, 51, 0.86);
+		color: #c3d0dc;
+		box-shadow: 0 2px 5px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.12);
 	}
-	.resize-handle:hover { background: rgba(82, 82, 91, 0.96); color: #bfdbfe; }
+	.resize-handle:hover {
+		border-color: rgba(103, 201, 189, 0.50);
+		background: rgba(39, 54, 61, 0.96);
+		color: #67c9bd;
+	}
+}
+
+@media (prefers-reduced-transparency: reduce) {
+	.resize-handle {
+		background: #f4f8fb;
+		-webkit-backdrop-filter: none;
+		backdrop-filter: none;
+	}
+}
+
+@media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
+	.resize-handle { background: #1f2933; }
+	.resize-handle:hover { background: #27363d; }
+}
+
+@media (prefers-contrast: more) {
+	.resize-handle {
+		border-color: #334155;
+		color: #1f3148;
+	}
+	.resize-handle:hover {
+		border-color: #0f766e;
+		color: #075e57;
+	}
+	.resize-handle:focus-visible { outline-color: #0f766e; }
+}
+
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+	.resize-handle {
+		border-color: #e2e8f0;
+		color: #f1f5f9;
+	}
+	.resize-handle:hover {
+		border-color: #99f6e4;
+		color: #99f6e4;
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -12,10 +12,11 @@ resizeHandleEl.className = "resize-handle";
 resizeHandleEl.type = "button";
 resizeHandleEl.hidden = true;
 resizeHandleEl.setAttribute("aria-label", "调整宠物大小");
-resizeHandleEl.innerHTML = '<svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 13 13 3M8 13h5V8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+resizeHandleEl.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6.25 2.75h-3.5v3.5m0-3.5 4 4m3 6h3.5v-3.5m0 3.5-4-4M7.35 7.35l1.3 1.3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 petEl.appendChild(resizeHandleEl);
 
 const DRAG_THRESHOLD_PX = 4;
+const FACING_DRAG_THRESHOLD_PX = 4;
 const DEFAULT_PET_SIZE = 56;
 const MIN_PET_SIZE = 40;
 const MAX_PET_SIZE = 160;
@@ -50,7 +51,7 @@ const SPRITE_FALLBACKS = {
 let snapshot = [];
 let collapsed = false;
 let petSize = DEFAULT_PET_SIZE;
-let drag = null; // { startScreenX, startScreenY, moved, movingWindow }
+let drag = null; // { startScreenX, startScreenY, moved, movingWindow, lastFacingScreenX, facingTravel }
 let resizeDrag = null; // { startScreenX, startScreenY, startSize, size }
 let spriteMap = null;
 let spriteReady = false;
@@ -78,6 +79,7 @@ const spriteFrameLoads = new Map();
 const spriteFrameMasks = new Map();
 let spriteFrameRequest = 0;
 let currentSpriteMask = null;
+let spriteFacing = "right";
 let petMouseIgnored = null;
 let lastPointer = null;
 let layoutState = { below: false, horizontal: "end" };
@@ -631,11 +633,48 @@ function isOpaqueSpritePoint(mask, point, rect) {
 	const x = Math.floor((point.clientX - rect.left) * mask.width / rect.width);
 	const y = Math.floor((point.clientY - rect.top) * mask.height / rect.height);
 	if (x < 0 || x >= mask.width || y < 0 || y >= mask.height) return false;
-	return mask.alpha[y * mask.width + x] >= HIT_ALPHA_THRESHOLD;
+	const sampleX = spriteFacing === "left" ? mask.width - 1 - x : x;
+	return mask.alpha[y * mask.width + sampleX] >= HIT_ALPHA_THRESHOLD;
+}
+
+function visibleSpriteBbox(mask) {
+	if (!mask || !mask.bbox) return null;
+	if (spriteFacing !== "left") return mask.bbox;
+	return {
+		left: mask.width - 1 - mask.bbox.right,
+		top: mask.bbox.top,
+		right: mask.width - 1 - mask.bbox.left,
+		bottom: mask.bbox.bottom,
+	};
+}
+
+function setSpriteFacing(nextFacing) {
+	if ((nextFacing !== "right" && nextFacing !== "left") || spriteFacing === nextFacing) return false;
+	spriteFacing = nextFacing;
+	if (petSpriteEl) petSpriteEl.classList.toggle("is-facing-left", spriteFacing === "left");
+	positionResizeHandle();
+	updatePointerInteractivity(lastPointer);
+	return true;
+}
+
+function updateSpriteFacingFromDrag(screenX) {
+	if (!drag || !drag.movingWindow || !Number.isFinite(screenX)) return;
+	const dx = screenX - drag.lastFacingScreenX;
+	drag.lastFacingScreenX = screenX;
+	if (!dx) return;
+	if (drag.facingTravel && Math.sign(drag.facingTravel) !== Math.sign(dx)) drag.facingTravel = dx;
+	else drag.facingTravel += dx;
+	if (drag.facingTravel >= FACING_DRAG_THRESHOLD_PX) {
+		setSpriteFacing("right");
+		drag.facingTravel = 0;
+	} else if (drag.facingTravel <= -FACING_DRAG_THRESHOLD_PX) {
+		setSpriteFacing("left");
+		drag.facingTravel = 0;
+	}
 }
 
 function resizeHandleSize() {
-	return petSize >= 100 ? 18 : 14;
+	return petSize >= 100 ? 20 : 16;
 }
 
 function positionResizeHandle() {
@@ -643,7 +682,8 @@ function positionResizeHandle() {
 	const rect = petSpriteEl.getBoundingClientRect();
 	if (!rect.width || !rect.height) return;
 	const handleSize = resizeHandleSize();
-	const bbox = currentSpriteMask.bbox;
+	const bbox = visibleSpriteBbox(currentSpriteMask);
+	if (!bbox) return;
 	const right = (bbox.right + 1) * rect.width / currentSpriteMask.width;
 	const bottom = (bbox.bottom + 1) * rect.height / currentSpriteMask.height;
 	const left = Math.min(Math.max(0, right - RESIZE_HANDLE_OVERLAP_PX - handleSize), Math.max(0, rect.width - handleSize));
@@ -1247,6 +1287,8 @@ petEl.addEventListener("mousedown", (e) => {
 		startScreenY: e.screenY,
 		moved: false,
 		movingWindow: false,
+		lastFacingScreenX: e.screenX,
+		facingTravel: 0,
 	};
 	window.naiBridge.dragStart({ screenX: e.screenX, screenY: e.screenY, layout: layoutPayload() });
 	e.preventDefault();
@@ -1295,6 +1337,7 @@ window.addEventListener("mousemove", (e) => {
 	if (totalDragDistance(e) >= DRAG_THRESHOLD_PX) {
 		drag.moved = true;
 		drag.movingWindow = true;
+		updateSpriteFacingFromDrag(e.screenX);
 		spriteDragging = true;
 		petEl.classList.add("is-dragging");
 		window.naiBridge.move({ screenX: e.screenX, screenY: e.screenY });
